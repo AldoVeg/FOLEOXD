@@ -91,8 +91,20 @@
             </div>
 
             <!-- Workspace (tarjetas de páginas) -->
-            <div id="workspace" class="workspace" aria-label="Área de trabajo. Organiza las páginas arrastrándolas."
-                 aria-live="polite" role="list"></div>
+            <div class="workspace-wrap">
+                <div id="workspace" class="workspace" aria-label="Área de trabajo. Organiza las páginas arrastrándolas."
+                     aria-live="polite" role="list"></div>
+
+                <!-- Barra flotante: solo aparece con selección activa (o "Todas" marcado) -->
+                <div id="selection-bar" class="selection-bar hidden">
+                    <span id="selection-count" class="selection-count"></span>
+                    <label class="control-item">
+                        <input type="checkbox" id="chk-todas" /> Todas
+                    </label>
+                    <button type="button" id="btn-force-vertical" class="btn-force" title="Forzar orientación vertical en las hojas del alcance actual">⬍ Forzar Vertical</button>
+                    <button type="button" id="btn-force-horizontal" class="btn-force" title="Forzar orientación horizontal en las hojas del alcance actual">⬌ Forzar Horizontal</button>
+                </div>
+            </div>
 
             <!-- Botón generar -->
             <button id="btn-generate" class="btn-primary" disabled aria-label="Unificar y descargar PDF">
@@ -126,9 +138,11 @@
         <div id="modal-backdrop" class="page-modal-backdrop"></div>
         <div class="page-modal-content">
             <button id="modal-close" class="modal-close" aria-label="Cerrar vista ampliada">✖</button>
-            <button id="modal-prev" class="modal-nav modal-prev" aria-label="Página anterior">‹</button>
-            <img id="modal-image" class="modal-image" alt="Vista ampliada de la página" />
-            <button id="modal-next" class="modal-nav modal-next" aria-label="Página siguiente">›</button>
+            <div class="modal-image-wrap">
+                <button id="modal-prev" class="modal-nav modal-prev" aria-label="Página anterior">‹</button>
+                <img id="modal-image" class="modal-image" alt="Vista ampliada de la página" />
+                <button id="modal-next" class="modal-nav modal-next" aria-label="Página siguiente">›</button>
+            </div>
             <div class="modal-toolbar">
                 <div id="modal-tools" class="modal-tools" role="group" aria-label="Rotar y espejar página ampliada"></div>
                 <label class="control-item">
