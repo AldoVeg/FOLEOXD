@@ -63,7 +63,10 @@
     let autoSelectedByDrag = null;
     let isGenerating      = false;
     const revokedUrls     = new Set();
-    const modalState      = { currentId: null };
+    const modalState      = { currentId: null, requestToken: 0 };
+    const modalHighResCache = new Map(); // pageId -> dataURL (solo dura la sesión del modal)
+    const modalPdfDocCache  = new Map(); // fileId -> documento pdf.js ya cargado (solo dura la sesión)
+    const HIGH_RES_SCALE = 2.2;
 
     const generateId = () => {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -439,6 +442,9 @@
        ═══════════════════════════════════════════════ */
     const modalEl        = document.getElementById('page-modal');
     const modalImage     = document.getElementById('modal-image');
+    const modalImageWrap = document.getElementById('modal-image-wrap');
+    const modalLoader    = document.getElementById('modal-loader');
+    const modalPageCount = document.getElementById('modal-page-count');
     const modalPrevBtn   = document.getElementById('modal-prev');
     const modalNextBtn   = document.getElementById('modal-next');
     const modalCloseBtn  = document.getElementById('modal-close');
@@ -462,11 +468,20 @@
       document.addEventListener('keydown', handleModalKeydown);
     }
 
-    function closeModal() {
+    async function closeModal() {
       if (!modalEl) return;
       modalEl.classList.add('hidden');
       modalState.currentId = null;
       document.removeEventListener('keydown', handleModalKeydown);
+
+      // Libera la caché de alta resolución y los documentos pdf.js abiertos
+      // para esta sesión del modal — no deben quedar viviendo en memoria
+      // indefinidamente después de cerrar.
+      modalHighResCache.clear();
+      for (const doc of modalPdfDocCache.values()) {
+        try { await doc.destroy(); } catch (e) { /* silencioso */ }
+      }
+      modalPdfDocCache.clear();
     }
 
     function handleModalKeydown(e) {
@@ -485,19 +500,88 @@
       renderModalTransform();
     }
 
-    function renderModalTransform() {
+    /* Genera (o reutiliza de la caché de esta sesión) una versión en alta
+       resolución de la página. Las páginas de Word ya se generaron a buena
+       resolución desde su origen, así que se usa su miniatura tal cual. */
+    async function getHighResImage(record) {
+      if (record.isWord) return record.thumb;
+      if (modalHighResCache.has(record.id)) return modalHighResCache.get(record.id);
+
+      let pdfDoc = modalPdfDocCache.get(record.fileId);
+      if (!pdfDoc) {
+        const entry = pdfDocumentsData.get(record.fileId);
+        if (!entry) return record.thumb; // no debería pasar, pero no se rompe la vista
+        // .slice(0) clona el buffer: pdf.js puede "consumir" el ArrayBuffer
+        // original, y ese mismo buffer podría necesitarse después para
+        // generar el PDF final — nunca se le pasa la referencia directa.
+        pdfDoc = await pdfjsLib.getDocument({ data: entry.buffer.slice(0) }).promise;
+        modalPdfDocCache.set(record.fileId, pdfDoc);
+      }
+
+      const page = await pdfDoc.getPage(record.pageIndex + 1);
+      const viewport = page.getViewport({ scale: HIGH_RES_SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      canvas.width = 0;
+
+      modalHighResCache.set(record.id, dataUrl);
+      return dataUrl;
+    }
+
+    async function renderModalTransform() {
       const record = pageRegistry.find(p => p.id === modalState.currentId);
       if (!record || !modalImage) return;
 
-      modalImage.src = record.thumb || '';
+      // Guarda contra clics rápidos de siguiente/anterior: si el usuario
+      // navega de nuevo antes de que termine este render, la respuesta
+      // vieja se descarta al llegar (nunca pisa la imagen correcta actual).
+      const myToken = ++modalState.requestToken;
+      const targetId = record.id;
+
       const sx = record.mirrorH ? -1 : 1;
       const sy = record.mirrorV ? -1 : 1;
-      modalImage.style.transform = 'rotate(' + (record.rotation || 0) + 'deg) scale(' + sx + ',' + sy + ')';
+      const rot = record.rotation || 0;
+      const swapDims = (rot === 90 || rot === 270);
+
+      // El marco se ajusta de inmediato a la proporción real de la hoja
+      // (considerando si está rotada), sin esperar a la imagen nítida —
+      // así no hay "salto" de tamaño cuando la imagen en alta resolución
+      // termine de cargar.
+      if (modalImageWrap && record.nativeWidth && record.nativeHeight) {
+        const w = swapDims ? record.nativeHeight : record.nativeWidth;
+        const h = swapDims ? record.nativeWidth : record.nativeHeight;
+        modalImageWrap.style.aspectRatio = w + ' / ' + h;
+      }
+
+      modalImage.style.transform = 'rotate(' + rot + 'deg) scale(' + sx + ',' + sy + ')';
+
+      // Mientras se genera la versión nítida, se muestra la miniatura ya
+      // existente (nunca una pantalla vacía) + un loader discreto encima.
+      modalImage.src = record.thumb || '';
+      if (modalLoader) modalLoader.classList.remove('hidden');
 
       const ids = getNavigablePages().map(p => p.id);
       const idx = ids.indexOf(modalState.currentId);
       if (modalPrevBtn) modalPrevBtn.disabled = (idx <= 0);
       if (modalNextBtn) modalNextBtn.disabled = (idx === -1 || idx >= ids.length - 1);
+      if (modalPageCount) modalPageCount.textContent = (idx + 1) + ' / ' + ids.length;
+
+      try {
+        const highResUrl = await getHighResImage(record);
+        // Si mientras tanto se navegó a otra hoja o se cerró el modal,
+        // esta respuesta ya está obsoleta — se descarta sin aplicarla.
+        if (myToken !== modalState.requestToken || modalState.currentId !== targetId) return;
+        modalImage.src = highResUrl;
+      } catch (e) {
+        console.error('Error al generar vista en alta resolución:', e);
+      } finally {
+        if (myToken === modalState.requestToken) {
+          if (modalLoader) modalLoader.classList.add('hidden');
+        }
+      }
     }
 
     if (modalToolsEl) {
@@ -700,6 +784,11 @@
               mirrorH: false,
               mirrorV: false,
               baseOrientation: viewport.width > viewport.height ? 'horizontal' : 'vertical',
+              // Proporción real de la hoja (la ratio es la misma a cualquier
+              // escala, así que se reutiliza el viewport ya calculado sin
+              // costo extra) — usada para dimensionar el marco del modal.
+              nativeWidth: viewport.width,
+              nativeHeight: viewport.height,
               thumb: canvas.toDataURL('image/jpeg', 0.5),
               isWord: false
             };
@@ -861,6 +950,8 @@
               mirrorH: false,
               mirrorV: false,
               baseOrientation: canvas.width > canvas.height ? 'horizontal' : 'vertical',
+              nativeWidth: canvas.width,
+              nativeHeight: canvas.height,
               thumb: canvas.toDataURL('image/jpeg', 0.75),
               isWord: true
             };
