@@ -1128,10 +1128,17 @@
         const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib;
         const finalPdf   = await PDFDocument.create();
         const loadedSrcDocs = new Map();
+        // Fix de rendimiento: getPages() se calcula UNA sola vez por archivo
+        // aquí, en vez de dentro del bucle por página (donde antes se repetía
+        // una vez por cada página del documento final — un costo que crecía
+        // en O(n²) y se volvía notoriamente inestable pasado ~150-200 páginas).
+        const srcPagesCache = new Map();
 
         for (const [fileId, entry] of pdfDocumentsData.entries()) {
           try {
-            loadedSrcDocs.set(fileId, await PDFDocument.load(entry.buffer, { ignoreEncryption: true }));
+            const doc = await PDFDocument.load(entry.buffer, { ignoreEncryption: true });
+            loadedSrcDocs.set(fileId, doc);
+            srcPagesCache.set(fileId, doc.getPages());
           } catch (e) {
             console.error('Error al cargar ' + entry.name, e);
           }
@@ -1188,7 +1195,13 @@
                   width: dims.width, height: dims.height
                 });
                 const embeddedCanonical = await finalPdf.embedPage(canonicalPage);
-                const canonicalIndex = finalPdf.getPages().indexOf(canonicalPage);
+                // Fix (mismo patrón de bug que el anterior): usar getPageCount()
+                // en vez de getPages().indexOf(...) — este último reconstruye
+                // y recorre el arreglo COMPLETO de páginas ya agregadas al PDF
+                // final en cada iteración (un arreglo que crece con cada hoja),
+                // lo cual también escala en O(n²) en documentos con muchas
+                // páginas de Word.
+                const canonicalIndex = finalPdf.getPageCount() - 1;
                 finalPdf.removePage(canonicalIndex); // no debe quedar en el PDF final
 
                 // Paso 2: la página real (con dimensiones ya intercambiadas
@@ -1211,7 +1224,7 @@
               newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
             } else {
               try {
-                const srcPages = srcDoc.getPages();
+                const srcPages = srcPagesCache.get(req.fileId);
                 const srcPage = srcPages[req.pageIndex];
                 const { width: srcW, height: srcH } = srcPage.getSize();
                 const embedded = await finalPdf.embedPage(srcPage);
