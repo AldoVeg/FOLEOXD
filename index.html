@@ -7,6 +7,16 @@
     <title>UNIFICADOR SEDAPAL</title>
     <link rel="stylesheet" href="index.css" />
 
+    <!--
+      ⚠️ SEGURIDAD (SRI pendiente):
+      Cada script externo debería llevar un atributo integrity="sha384-..." tomado
+      DIRECTAMENTE del botón "Copy Script Tag" de cdnjs.com / jsdelivr.com para esta
+      versión exacta. No se puede generar ese hash a mano ni adivinarlo: un hash
+      incorrecto hace que el navegador BLOQUEE el script por completo. Copia el
+      hash real desde la página oficial de cada librería y pégalo en el atributo
+      integrity="..." de cada <script> de abajo, junto con crossorigin="anonymous".
+    -->
+
     <!-- CDN: pdf-lib (motor PDF) -->
     <script defer src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"
             onerror="document.getElementById('cdn-error').classList.remove('hidden');document.getElementById('cdn-error').textContent='⚠️ pdf-lib no disponible. Revisa tu conexión.'"></script>
@@ -15,8 +25,8 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"
             onerror="document.getElementById('cdn-error').classList.remove('hidden');document.getElementById('cdn-error').textContent='⚠️ pdf.js no disponible. Revisa tu conexión.'"></script>
 
-    <!-- CDN: SortableJS (arrastre visual) -->
-    <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"
+    <!-- CDN: SortableJS (versión fijada, ya no "@latest") -->
+    <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
             onerror="console.warn('SortableJS no disponible — solo drag nativo.')"></script>
 
     <!-- CDN: mammoth.js (conversión Word → HTML) -->
@@ -49,9 +59,9 @@
             </div>
             <input type="file" id="file-input" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;" />
 
-            <!-- Panel de controles -->
+            <!-- Panel de controles: foleo -->
             <fieldset class="controls-panel">
-                <legend class="sr-only">Opciones de salida</legend>
+                <legend class="sr-only">Opciones de foleo y optimización</legend>
 
                 <label class="control-item">
                     <input type="checkbox" id="chk-foleo" /> Foleo
@@ -70,7 +80,35 @@
                 <label class="control-item">
                     <input type="checkbox" id="chk-optimize" checked /> Optimizar Peso
                 </label>
+
+                <span class="control-hint" title="El número de foleo siempre se dibuja arriba a la derecha de la hoja final, sin importar la rotación o el espejo aplicado.">ⓘ Foleo siempre arriba-derecha</span>
             </fieldset>
+
+            <!-- Panel: alcance de rotación / espejo -->
+            <fieldset class="scope-panel" role="radiogroup" aria-label="Alcance de rotación y espejo">
+                <legend class="sr-only">¿A qué hojas aplicar rotación/espejo?</legend>
+                <span class="scope-title">Rotar / Espejar aplica a:</span>
+
+                <label class="control-item">
+                    <input type="radio" name="transform-scope" id="scope-this" value="this" checked /> Esta hoja
+                </label>
+                <label class="control-item">
+                    <input type="radio" name="transform-scope" id="scope-selected" value="selected" /> Seleccionadas
+                </label>
+                <label class="control-item">
+                    <input type="radio" name="transform-scope" id="scope-all" value="all" /> Todas
+                </label>
+            </fieldset>
+
+            <!-- Panel: nombre del archivo de salida -->
+            <div class="filename-panel">
+                <label for="output-filename">Nombre del archivo:</label>
+                <div class="filename-input-wrap">
+                    <input type="text" id="output-filename" placeholder="Ej: TODO" maxlength="120"
+                           aria-label="Nombre del archivo PDF de salida (sin extensión)" />
+                    <span class="filename-ext">.pdf</span>
+                </div>
+            </div>
 
             <!-- Workspace (tarjetas de páginas) -->
             <div id="workspace" class="workspace" aria-label="Área de trabajo. Organiza las páginas arrastrándolas."
