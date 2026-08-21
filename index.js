@@ -1154,6 +1154,7 @@
         }
 
         const BASE_W = 595.28, BASE_H = 841.89; // A4 en puntos
+        let failedRenderCount = 0; // páginas que terminaron en blanco por algún error (ya nunca es silencioso)
 
         for (let i = 0; i < pageRegistry.length; i++) {
           updateProgress(i, pageRegistry.length);
@@ -1175,39 +1176,33 @@
             } else {
               const pageW = swapDims ? BASE_H : BASE_W;
               const pageH = swapDims ? BASE_W : BASE_H;
+              // La hoja se agrega UNA sola vez, antes de intentar dibujar
+              // nada — así, si algo falla más abajo, queda en blanco pero
+              // NUNCA se duplica agregando una segunda de rescate encima.
+              newPage = finalPdf.addPage([pageW, pageH]);
 
               try {
                 const imgBytes = await fetch(req.thumb).then(r => r.arrayBuffer());
-                const image = (req.thumb.startsWith('data:image/jpeg') || req.thumb.startsWith('data:image/jpg'))
-                  ? await finalPdf.embedJpg(imgBytes)
-                  : await finalPdf.embedPng(imgBytes);
+                const isJpeg = (req.thumb.startsWith('data:image/jpeg') || req.thumb.startsWith('data:image/jpg'));
 
-                const dims = image.scaleToFit(BASE_W - 80, BASE_H - 100);
+                // Documento temporal INDEPENDIENTE, nunca agregado a
+                // finalPdf: se arma ahí la página canónica y se descarta
+                // sola al terminar. Ya no depende de agregar-y-luego-quitar
+                // una página del PDF final (ese truco es lo que fallaba a
+                // gran escala si removePage/getPageCount no coincidían).
+                const tempDoc = await PDFDocument.create();
+                const tempImage = isJpeg ? await tempDoc.embedJpg(imgBytes) : await tempDoc.embedPng(imgBytes);
+                const dims = tempImage.scaleToFit(BASE_W - 80, BASE_H - 100);
                 const marginX = (BASE_W - dims.width) / 2;
                 const marginY = (BASE_H - dims.height) / 2;
 
-                // Paso 1: página "canónica" sin rotar, tamaño A4 fijo, con la
-                // imagen centrada normalmente (igual que antes). Esto evita
-                // mezclar el margen de centrado con la matemática de rotación.
-                const canonicalPage = finalPdf.addPage([BASE_W, BASE_H]);
-                canonicalPage.drawImage(image, {
+                const canonicalPage = tempDoc.addPage([BASE_W, BASE_H]);
+                canonicalPage.drawImage(tempImage, {
                   x: marginX, y: marginY,
                   width: dims.width, height: dims.height
                 });
-                const embeddedCanonical = await finalPdf.embedPage(canonicalPage);
-                // Fix (mismo patrón de bug que el anterior): usar getPageCount()
-                // en vez de getPages().indexOf(...) — este último reconstruye
-                // y recorre el arreglo COMPLETO de páginas ya agregadas al PDF
-                // final en cada iteración (un arreglo que crece con cada hoja),
-                // lo cual también escala en O(n²) en documentos con muchas
-                // páginas de Word.
-                const canonicalIndex = finalPdf.getPageCount() - 1;
-                finalPdf.removePage(canonicalIndex); // no debe quedar en el PDF final
 
-                // Paso 2: la página real (con dimensiones ya intercambiadas
-                // si corresponde) recibe esa página canónica horneada con
-                // rotación + espejo combinados.
-                newPage = finalPdf.addPage([pageW, pageH]);
+                const embeddedCanonical = await finalPdf.embedPage(canonicalPage);
                 drawTransformedContent(
                   newPage,
                   (opts) => newPage.drawPage(embeddedCanonical, opts),
@@ -1215,7 +1210,9 @@
                 );
               } catch (e) {
                 console.error('Error al insertar imagen Word:', e);
-                newPage = finalPdf.addPage([pageW, pageH]);
+                failedRenderCount++;
+                // newPage ya existe (agregada arriba) — queda en blanco,
+                // sin agregar ninguna hoja adicional.
               }
             }
           } else {
@@ -1223,24 +1220,50 @@
             if (!srcDoc) {
               newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
             } else {
+              let srcPage = null, srcW = BASE_W, srcH = BASE_H, intrinsicRot = 0;
               try {
                 const srcPages = srcPagesCache.get(req.fileId);
-                const srcPage = srcPages[req.pageIndex];
-                const { width: srcW, height: srcH } = srcPage.getSize();
-                const embedded = await finalPdf.embedPage(srcPage);
-
-                const pageW = swapDims ? srcH : srcW;
-                const pageH = swapDims ? srcW : srcH;
-                newPage = finalPdf.addPage([pageW, pageH]);
-
-                drawTransformedContent(
-                  newPage,
-                  (opts) => newPage.drawPage(embedded, opts),
-                  srcW, srcH, rot, mH, mV
-                );
+                srcPage = srcPages[req.pageIndex];
+                const size = srcPage.getSize();
+                srcW = size.width;
+                srcH = size.height;
+                // CLAVE: pdf-lib IGNORA la marca interna /Rotate de la página
+                // (getSize devuelve siempre las dimensiones crudas del
+                // MediaBox), mientras que pdf.js —que genera las miniaturas
+                // que ve el usuario— SÍ la aplica. Ese desajuste hacía que
+                // las páginas escaneadas con /Rotate se vieran bien en
+                // pantalla pero salieran giradas en el PDF final. Aquí se
+                // lee esa marca para combinarla con la rotación del usuario.
+                intrinsicRot = ((srcPage.getRotation().angle % 360) + 360) % 360;
               } catch (e) {
-                console.error('Error al incrustar página original:', e);
-                newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
+                console.error('Error al leer dimensiones/rotación de la página original:', e);
+                failedRenderCount++;
+                srcPage = null; // se usará el respaldo A4 más abajo
+              }
+
+              // Rotación total = la que ya traía la hoja + la que pidió el usuario.
+              const totalRot = (intrinsicRot + rot) % 360;
+              const totalSwap = (totalRot === 90 || totalRot === 270);
+              const pageW = totalSwap ? srcH : srcW;
+              const pageH = totalSwap ? srcW : srcH;
+              // Se agrega UNA sola vez antes del intento de dibujar, para
+              // que un fallo posterior nunca duplique la hoja.
+              newPage = finalPdf.addPage([pageW, pageH]);
+
+              if (srcPage) {
+                try {
+                  const embedded = await finalPdf.embedPage(srcPage);
+                  // embedPage entrega el contenido SIN aplicar /Rotate, así que
+                  // se le pasan las dimensiones crudas y la rotación total.
+                  drawTransformedContent(
+                    newPage,
+                    (opts) => newPage.drawPage(embedded, opts),
+                    srcW, srcH, totalRot, mH, mV
+                  );
+                } catch (e) {
+                  console.error('Error al incrustar página original:', e);
+                  failedRenderCount++;
+                }
               }
             }
           }
@@ -1291,6 +1314,14 @@
         }, 3000);
 
         showToast('✅ PDF unificado generado exitosamente.', 'success');
+
+        // Nunca más silencioso: si alguna hoja terminó en blanco por un
+        // error puntual durante la generación, se avisa explícitamente
+        // con el conteo exacto, en vez de que el usuario lo descubra solo
+        // al abrir el archivo y ver páginas vacías sin explicación.
+        if (failedRenderCount > 0) {
+          showToast('⚠️ ' + failedRenderCount + ' hoja(s) no pudieron dibujarse y quedaron en blanco en el PDF final. Revisa la consola para más detalle.', 'warning');
+        }
       } catch (e) {
         console.error('Error en unificación:', e);
         showToast('Error crítico: ' + e.message, 'error');
