@@ -77,26 +77,15 @@
                     <input type="number" id="folio-start" value="1" min="1" max="999" aria-label="Número de inicio del foleo" />
                 </label>
 
-                <label class="control-item">
-                    <input type="checkbox" id="chk-optimize" checked /> Optimizar Peso
-                </label>
-
                 <span class="control-hint" title="El número de foleo siempre se dibuja arriba a la derecha de la hoja final, sin importar la rotación o el espejo aplicado.">ⓘ Foleo siempre arriba-derecha</span>
             </fieldset>
 
             <!-- Panel: alcance de rotación / espejo -->
-            <fieldset class="scope-panel" role="radiogroup" aria-label="Alcance de rotación y espejo">
-                <legend class="sr-only">¿A qué hojas aplicar rotación/espejo?</legend>
-                <span class="scope-title">Rotar / Espejar aplica a:</span>
-
+            <fieldset class="scope-panel">
+                <legend class="sr-only">Alcance de rotación y espejo</legend>
+                <span class="control-hint" title="Sin selección: afecta solo la hoja donde hagas clic. Con varias hojas seleccionadas (Ctrl): afecta a todas las seleccionadas.">ⓘ Rotar/Espejar afecta la hoja clicada, o todas las seleccionadas con Ctrl</span>
                 <label class="control-item">
-                    <input type="radio" name="transform-scope" id="scope-this" value="this" checked /> Esta hoja
-                </label>
-                <label class="control-item">
-                    <input type="radio" name="transform-scope" id="scope-selected" value="selected" /> Seleccionadas
-                </label>
-                <label class="control-item">
-                    <input type="radio" name="transform-scope" id="scope-all" value="all" /> Todas
+                    <input type="checkbox" id="chk-scope-all" /> Todas
                 </label>
             </fieldset>
 
