@@ -324,11 +324,17 @@
       return base === 'vertical' ? 'horizontal' : 'vertical';
     }
 
-    function forceOrientation(desired) {
-      const todasOn = chkTodas && chkTodas.checked;
-      const idsToUse = todasOn
-        ? pageRegistry.filter(p => !p.isFailed).map(p => p.id)
-        : Array.from(document.querySelectorAll('.page-card.selected')).map(c => c.dataset.id);
+    function forceOrientation(desired, explicitIds) {
+      let idsToUse;
+      if (explicitIds) {
+        // Llamada desde el modal: el alcance ya viene resuelto por quien llama.
+        idsToUse = explicitIds;
+      } else {
+        const todasOn = chkTodas && chkTodas.checked;
+        idsToUse = todasOn
+          ? pageRegistry.filter(p => !p.isFailed).map(p => p.id)
+          : Array.from(document.querySelectorAll('.page-card.selected')).map(c => c.dataset.id);
+      }
 
       if (idsToUse.length === 0) {
         showToast('Selecciona al menos una hoja, o marca "Todas".', 'warning');
@@ -612,13 +618,27 @@
       modalToolsEl.querySelectorAll('.card-tool').forEach(btn => {
         btn.addEventListener('click', () => {
           if (!modalState.currentId) return;
-          const applyAll = modalApplyAll && modalApplyAll.checked;
-          const targetIds = applyAll
-            ? getNavigablePages().map(p => p.id)
-            : [modalState.currentId];
-          applyTransform(modalState.currentId, btn.dataset.action, targetIds);
+          applyTransform(modalState.currentId, btn.dataset.action, modalScopeIds());
         });
       });
+    }
+
+    // Alcance de una acción lanzada DESDE el modal: la hoja visible, o todas
+    // si el usuario marcó "Aplicar a todas" en esa misma barra.
+    function modalScopeIds() {
+      const applyAll = modalApplyAll && modalApplyAll.checked;
+      return applyAll
+        ? getNavigablePages().map(p => p.id)
+        : (modalState.currentId ? [modalState.currentId] : []);
+    }
+
+    const modalForceVertical   = document.getElementById('modal-force-vertical');
+    const modalForceHorizontal = document.getElementById('modal-force-horizontal');
+    if (modalForceVertical) {
+      modalForceVertical.addEventListener('click', () => forceOrientation('vertical', modalScopeIds()));
+    }
+    if (modalForceHorizontal) {
+      modalForceHorizontal.addEventListener('click', () => forceOrientation('horizontal', modalScopeIds()));
     }
 
     if (modalPrevBtn) modalPrevBtn.addEventListener('click', () => navigateModal(-1));
@@ -977,9 +997,14 @@
               rotation: 0,
               mirrorH: false,
               mirrorV: false,
-              baseOrientation: canvas.width > canvas.height ? 'horizontal' : 'vertical',
-              nativeWidth: canvas.width,
-              nativeHeight: canvas.height,
+              baseOrientation: 'vertical',
+              // Las hojas de Word SIEMPRE se emiten en A4 vertical en el PDF
+              // final, así que la proporción registrada debe ser A4 — no la
+              // del canvas (que varía si la última hoja tiene poco contenido).
+              // Así la vista ampliada del modal muestra exactamente la misma
+              // proporción que tendrá el producto descargable.
+              nativeWidth: 595.28,
+              nativeHeight: 841.89,
               thumb: canvas.toDataURL('image/jpeg', 0.75),
               isWord: true
             };
@@ -1154,7 +1179,9 @@
         }
 
         const BASE_W = 595.28, BASE_H = 841.89; // A4 en puntos
-        let failedRenderCount = 0; // páginas que terminaron en blanco por algún error (ya nunca es silencioso)
+        // Se registra el NÚMERO de cada hoja que falla (no solo cuántas), para
+        // que el usuario sepa exactamente cuáles revisar en un lote grande.
+        const failedPageNumbers = [];
 
         for (let i = 0; i < pageRegistry.length; i++) {
           updateProgress(i, pageRegistry.length);
@@ -1210,7 +1237,7 @@
                 );
               } catch (e) {
                 console.error('Error al insertar imagen Word:', e);
-                failedRenderCount++;
+                failedPageNumbers.push(finalPdf.getPageCount());
                 // newPage ya existe (agregada arriba) — queda en blanco,
                 // sin agregar ninguna hoja adicional.
               }
@@ -1234,10 +1261,17 @@
                 // las páginas escaneadas con /Rotate se vieran bien en
                 // pantalla pero salieran giradas en el PDF final. Aquí se
                 // lee esa marca para combinarla con la rotación del usuario.
-                intrinsicRot = ((srcPage.getRotation().angle % 360) + 360) % 360;
+                const rawAngle = ((srcPage.getRotation().angle % 360) + 360) % 360;
+                // El estándar PDF exige múltiplos de 90, pero existen archivos
+                // mal formados. Un valor arbitrario (ej. 45) produciría
+                // geometría impredecible, así que se redondea al múltiplo de
+                // 90 más cercano en vez de propagar un valor inválido.
+                intrinsicRot = (Math.round(rawAngle / 90) * 90) % 360;
               } catch (e) {
                 console.error('Error al leer dimensiones/rotación de la página original:', e);
-                failedRenderCount++;
+                // Aquí la hoja AÚN no se ha agregado (se agrega más abajo),
+                // por eso su número final es el conteo actual + 1.
+                failedPageNumbers.push(finalPdf.getPageCount() + 1);
                 srcPage = null; // se usará el respaldo A4 más abajo
               }
 
@@ -1246,6 +1280,18 @@
               const totalSwap = (totalRot === 90 || totalRot === 270);
               const pageW = totalSwap ? srcH : srcW;
               const pageH = totalSwap ? srcW : srcH;
+
+              // Fix adicional (confirmado por álgebra y prueba con marcador
+              // asimétrico): cuando la rotación intrínseca de la hoja es de
+              // 90°/270°, los ejes de espejo H/V que el usuario eligió —
+              // mirando la vista YA orientada en pantalla— quedan CRUZADOS
+              // si se aplican tal cual en el marco crudo de pdf-lib. Se
+              // intercambian aquí antes de dibujar. (Con 0°/180° no hace
+              // falta: esas rotaciones no cruzan los ejes de espejo.)
+              const axesSwap = (intrinsicRot === 90 || intrinsicRot === 270);
+              const finalMH = axesSwap ? mV : mH;
+              const finalMV = axesSwap ? mH : mV;
+
               // Se agrega UNA sola vez antes del intento de dibujar, para
               // que un fallo posterior nunca duplique la hoja.
               newPage = finalPdf.addPage([pageW, pageH]);
@@ -1258,11 +1304,11 @@
                   drawTransformedContent(
                     newPage,
                     (opts) => newPage.drawPage(embedded, opts),
-                    srcW, srcH, totalRot, mH, mV
+                    srcW, srcH, totalRot, finalMH, finalMV
                   );
                 } catch (e) {
                   console.error('Error al incrustar página original:', e);
-                  failedRenderCount++;
+                  failedPageNumbers.push(finalPdf.getPageCount());
                 }
               }
             }
@@ -1276,14 +1322,26 @@
             const { width, height } = newPage.getSize();
             const fStr = String(folioNum).padStart(3, '0');
 
+            // Fix: el sello del foleo se escala en proporción al tamaño real
+            // de la hoja (referencia: A4). Antes usaba medidas fijas, lo que
+            // lo dejaba diminuto e ilegible en hojas grandes (A3, planos) y
+            // desproporcionado en hojas pequeñas.
+            const scale = Math.max(0.6, Math.min(2.5, Math.min(width / BASE_W, height / BASE_H)));
+            const boxW = 30 * scale, boxH = 16 * scale;
+            const marginRight = 10 * scale, marginTop = 9 * scale;
+            const fontSize = 11 * scale;
+
             newPage.drawRectangle({
-              x: width - 40, y: height - 25,
-              width: 30, height: 16,
+              x: width - boxW - marginRight,
+              y: height - boxH - marginTop,
+              width: boxW,
+              height: boxH,
               color: rgb(1, 1, 1)
             });
             newPage.drawText(fStr, {
-              x: width - 36, y: height - 21,
-              size: 11, font,
+              x: width - boxW - marginRight + (4 * scale),
+              y: height - boxH - marginTop + (4 * scale),
+              size: fontSize, font,
               color: rgb(0, 0, 0)
             });
 
@@ -1319,8 +1377,10 @@
         // error puntual durante la generación, se avisa explícitamente
         // con el conteo exacto, en vez de que el usuario lo descubra solo
         // al abrir el archivo y ver páginas vacías sin explicación.
-        if (failedRenderCount > 0) {
-          showToast('⚠️ ' + failedRenderCount + ' hoja(s) no pudieron dibujarse y quedaron en blanco en el PDF final. Revisa la consola para más detalle.', 'warning');
+        if (failedPageNumbers.length > 0) {
+          const lista = failedPageNumbers.slice(0, 15).join(', ') + (failedPageNumbers.length > 15 ? '…' : '');
+          showToast('⚠️ ' + failedPageNumbers.length + ' hoja(s) quedaron en blanco en el PDF. Páginas: ' + lista, 'warning');
+          console.warn('Páginas en blanco en el PDF final:', failedPageNumbers);
         }
       } catch (e) {
         console.error('Error en unificación:', e);
