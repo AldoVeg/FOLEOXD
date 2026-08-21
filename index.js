@@ -1,9 +1,14 @@
 /* ═══════════════════════════════════════════════════
-   index.js — UNIFICADOR SEDAPAL (Fortificado v5)
+   index.js — UNIFICADOR SEDAPAL (Fortificado v6)
    ✅ Multi-Drag manual de grupo
    ✅ Soporte Word/DOCX → hojas → workspace → PDF
-   ✅ Foleo normal + inverso
-   ✅ IIFE estricto · CDN guards · Magic bytes
+   ✅ Foleo normal + inverso, SIEMPRE arriba-derecha
+   ✅ Rotación (90°) + Espejo (horizontal/vertical) combinables
+   ✅ Alcance de transformación: esta hoja / seleccionadas / todas
+   ✅ Nombre de archivo personalizado
+   ✅ Paginación Word real (ya no genera hojas en blanco)
+   ✅ Límite de memoria/páginas · Guardas de CDN reforzadas
+   ✅ IIFE estricto · Magic bytes
    ═══════════════════════════════════════════════════ */
 
 (function () {
@@ -18,7 +23,7 @@
 
   function init() {
 
-    /* ── Validación CDNs ── */
+    /* ── Validación CDNs esenciales ── */
     if (typeof pdfjsLib === 'undefined') {
       const banner = document.getElementById('cdn-error');
       if (banner) { banner.classList.remove('hidden'); banner.textContent = '⚠️ Motor PDF no disponible. Verifica tu conexión.'; }
@@ -27,25 +32,32 @@
     if (typeof Sortable === 'undefined') {
       console.warn('⚠️ SortableJS no disponible. Solo drag nativo.');
     }
+    const HTML2CANVAS_OK = typeof html2canvas !== 'undefined';
+    const MAMMOTH_OK     = typeof mammoth !== 'undefined';
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
+    /* ── Límites de memoria / seguridad de ejecución (Fix #7) ── */
+    const MAX_TOTAL_PAGES  = 400;                 // páginas totales permitidas en el workspace
+    const MAX_TOTAL_BYTES  = 200 * 1024 * 1024;   // 200MB de archivos cargados por lote
+
     /* ── Referencias DOM ── */
-    const workspace    = document.getElementById('workspace');
-    const btnGenerate  = document.getElementById('btn-generate');
-    const overlay      = document.getElementById('loading-overlay');
-    const textStatus   = document.getElementById('loading-text');
-    const progressBar  = document.getElementById('progress-bar');
-    const dropZone     = document.getElementById('drop-zone');
-    const fileInput    = document.getElementById('file-input');
-    const chkFoleo     = document.getElementById('chk-foleo');
-    const chkFoleoInv  = document.getElementById('chk-foleo-inverso');
-    const folioStart   = document.getElementById('folio-start');
-    const chkOptimize  = document.getElementById('chk-optimize');
+    const workspace       = document.getElementById('workspace');
+    const btnGenerate      = document.getElementById('btn-generate');
+    const overlay           = document.getElementById('loading-overlay');
+    const textStatus       = document.getElementById('loading-text');
+    const progressBar      = document.getElementById('progress-bar');
+    const dropZone           = document.getElementById('drop-zone');
+    const fileInput           = document.getElementById('file-input');
+    const chkFoleo             = document.getElementById('chk-foleo');
+    const chkFoleoInv         = document.getElementById('chk-foleo-inverso');
+    const folioStart           = document.getElementById('folio-start');
+    const chkOptimize         = document.getElementById('chk-optimize');
+    const outputFilenameInput = document.getElementById('output-filename');
 
     /* ── Estado interno ── */
     let pdfDocumentsData  = new Map();
-    let wordDocumentsData = new Map(); // Buffers de Word → array de thumbnails por hoja
+    let wordDocumentsData = new Map();
     let pageRegistry      = [];
     let multiDragGroup    = null;
     let multiDragAnchor   = null;
@@ -104,9 +116,20 @@
     }
 
     function isValidDOCX(buffer) {
-      // Verifica firma ZIP (PK)
       const arr = new Uint8Array(buffer.slice(0, 2));
-      return arr[0] === 0x50 && arr[1] === 0x4B;
+      return arr[0] === 0x50 && arr[1] === 0x4B; // PK (zip)
+    }
+
+    /* Normaliza el nombre de archivo elegido por el usuario (Requerimiento #1) */
+    function resolveOutputFilename() {
+      let raw = (outputFilenameInput && outputFilenameInput.value || '').trim();
+      if (!raw) {
+        raw = 'SEDAPAL_Unificado_' + new Date().toISOString().split('T')[0];
+      }
+      raw = raw.replace(/\.pdf$/i, '');              // evita doble ".pdf.pdf"
+      raw = raw.replace(/[\\/:*?"<>|]/g, '_');       // caracteres no válidos en nombres de archivo
+      raw = raw.slice(0, 150);
+      return raw + '.pdf';
     }
 
     /* ═══════════════════════════════════════════════
@@ -134,12 +157,15 @@
         delay: 0,
         delayOnTouchOnly: true,
         touchStartThreshold: 3,
+        // Evita iniciar un arrastre cuando el usuario hace clic en las
+        // herramientas de rotación/espejo o en el botón de eliminar.
+        filter: '.card-tool, .btn-delete-page',
+        preventOnFilter: true,
 
         onStart(evt) {
           const card = evt.item;
           const selected = document.querySelectorAll('.page-card.selected');
 
-          // Si la tarjeta arrastrada NO está seleccionada → seleccionar solo ella
           if (!card.classList.contains('selected')) {
             document.querySelectorAll('.page-card.selected').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
@@ -148,14 +174,12 @@
             return;
           }
 
-          // Si solo hay 1 seleccionada → arrastre normal
           if (selected.length <= 1) {
             multiDragGroup = null;
             multiDragAnchor = null;
             return;
           }
 
-          // ── MULTI-DRAG: ocultar las demás seleccionadas ──
           multiDragGroup = [];
           multiDragAnchor = card.dataset.id;
 
@@ -166,7 +190,6 @@
             }
           });
 
-          // Badge visual «+N»
           let badge = card.querySelector('.multi-drag-badge');
           if (!badge) {
             badge = document.createElement('span');
@@ -184,7 +207,6 @@
             return;
           }
 
-          // Reinsertar tarjetas ocultas justo después del ancla
           const anchorCard = document.querySelector('[data-id="' + multiDragAnchor + '"]');
           if (anchorCard) {
             multiDragGroup.forEach(item => {
@@ -209,6 +231,116 @@
     }
 
     /* ═══════════════════════════════════════════════
+       ROTACIÓN / ESPEJO — Requerimiento #2
+       ═══════════════════════════════════════════════ */
+
+    function getTransformScope() {
+      const el = document.querySelector('input[name="transform-scope"]:checked');
+      return el ? el.value : 'this';
+    }
+
+    function resolveTargetIds(clickedId) {
+      const scope = getTransformScope();
+      if (scope === 'all') {
+        return pageRegistry.filter(p => !p.isFailed).map(p => p.id);
+      }
+      if (scope === 'selected') {
+        const ids = Array.from(document.querySelectorAll('.page-card.selected'))
+          .map(c => c.dataset.id);
+        // Si no hay nada seleccionado, se cae de vuelta a "esta hoja" para
+        // que el clic nunca se pierda sin efecto ni aviso.
+        if (ids.length === 0) {
+          showToast('No hay hojas seleccionadas. Se aplicó solo a esta hoja.', 'warning');
+          return [clickedId];
+        }
+        return ids;
+      }
+      return [clickedId];
+    }
+
+    /* Aplica la transformación visual (CSS) + la guarda en el registro de datos */
+    function applyTransform(clickedId, action) {
+      const targetIds = resolveTargetIds(clickedId);
+
+      targetIds.forEach(id => {
+        const record = pageRegistry.find(p => p.id === id);
+        if (!record || record.isFailed) return;
+
+        record.rotation = record.rotation || 0;
+        record.mirrorH  = !!record.mirrorH;
+        record.mirrorV  = !!record.mirrorV;
+
+        switch (action) {
+          case 'rotate-cw':
+            record.rotation = (record.rotation + 90) % 360;
+            break;
+          case 'rotate-ccw':
+            record.rotation = (record.rotation + 270) % 360;
+            break;
+          case 'mirror-h':
+            record.mirrorH = !record.mirrorH;
+            break;
+          case 'mirror-v':
+            record.mirrorV = !record.mirrorV;
+            break;
+        }
+
+        renderCardTransform(id);
+      });
+    }
+
+    /* Refleja rotation/mirrorH/mirrorV en el <img> de la tarjeta (vista previa) */
+    function renderCardTransform(id) {
+      const record = pageRegistry.find(p => p.id === id);
+      if (!record) return;
+      const card = document.querySelector('[data-id="' + id + '"]');
+      if (!card) return;
+      const img = card.querySelector('.page-image');
+      if (!img) return;
+
+      const sx = record.mirrorH ? -1 : 1;
+      const sy = record.mirrorV ? -1 : 1;
+      img.style.transform = 'rotate(' + (record.rotation || 0) + 'deg) scale(' + sx + ',' + sy + ')';
+
+      // Indicador discreto de que la hoja tiene transformación activa
+      let indicator = card.querySelector('.transform-indicator');
+      const hasTransform = (record.rotation && record.rotation !== 0) || record.mirrorH || record.mirrorV;
+      if (hasTransform) {
+        if (!indicator) {
+          indicator = document.createElement('span');
+          indicator.className = 'transform-indicator';
+          card.appendChild(indicator);
+        }
+        const parts = [];
+        if (record.rotation) parts.push(record.rotation + '°');
+        if (record.mirrorH) parts.push('⇋');
+        if (record.mirrorV) parts.push('⇵');
+        indicator.textContent = parts.join(' ');
+      } else if (indicator) {
+        indicator.remove();
+      }
+    }
+
+    function buildCardToolsHTML() {
+      return (
+        '<div class="card-tools" role="group" aria-label="Rotar y espejar página">' +
+          '<button type="button" class="card-tool" data-action="rotate-ccw" title="Rotar 90° a la izquierda" aria-label="Rotar 90° a la izquierda">' +
+            '<svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 1 1 1.5 8.5M4 9V4M4 9h5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>' +
+          '<button type="button" class="card-tool" data-action="rotate-cw" title="Rotar 90° a la derecha" aria-label="Rotar 90° a la derecha">' +
+            '<svg viewBox="0 0 24 24"><path d="M20 9a8 8 0 1 0-1.5 8.5M20 9V4M20 9h-5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>' +
+          '<button type="button" class="card-tool" data-action="mirror-h" title="Espejo horizontal" aria-label="Espejo horizontal">' +
+            '<svg viewBox="0 0 24 24"><path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>' +
+          '<button type="button" class="card-tool" data-action="mirror-v" title="Espejo vertical" aria-label="Espejo vertical">' +
+            '<svg viewBox="0 0 24 24"><path d="M3 12h18M8 6l4-3 4 3M8 18l4 3 4-3" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+          '</button>' +
+        '</div>'
+      );
+    }
+
+    /* ═══════════════════════════════════════════════
        CREAR TARJETA EN DOM
        ═══════════════════════════════════════════════ */
     function createCardInDOM(data) {
@@ -219,14 +351,13 @@
       card.dataset.fileId = data.fileId;
       card.dataset.pageIndex = data.pageIndex;
       card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'listitem');
 
-      // Clic para seleccionar (Ctrl+A, Shift+Click, etc. lo maneja Sortable nativo)
       card.addEventListener('click', (e) => {
-        if (e.target.classList.contains('btn-delete-page')) return;
+        if (e.target.closest('.btn-delete-page') || e.target.closest('.card-tool')) return;
         if (e.ctrlKey || e.metaKey) {
           card.classList.toggle('selected');
         } else if (e.shiftKey) {
-          // Selección por rango simplificada
           const cards = Array.from(workspace.querySelectorAll('.page-card'));
           const lastSelected = workspace.querySelector('.page-card.selected:last-of-type');
           if (lastSelected) {
@@ -240,7 +371,6 @@
             card.classList.toggle('selected');
           }
         } else {
-          // Clic simple: si ya está seleccionada y hay otras, no deseleccionar (para permitir arrastre)
           if (!card.classList.contains('selected')) {
             document.querySelectorAll('.page-card.selected').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
@@ -262,7 +392,6 @@
           card.remove();
         }
         syncRegistryWithDOM();
-        // Si workspace queda vacío, limpiar buffers
         if (workspace.children.length === 0) {
           pdfDocumentsData.clear();
           wordDocumentsData.clear();
@@ -272,14 +401,16 @@
         }
       });
 
-      // Imagen miniatura
+      // Marco recortado + imagen miniatura
+      const frame = document.createElement('div');
+      frame.className = 'page-image-frame';
+
       const img = document.createElement('img');
       img.className = 'page-image';
       img.src = data.thumb;
-      img.dataset.rotation = '0';
       img.setAttribute('alt', data.isWord ? 'Hoja Word ' + (data.pageIndex + 1) : 'Página PDF ' + (data.pageIndex + 1));
+      frame.appendChild(img);
 
-      // Badge Word si aplica
       if (data.isWord) {
         const wordBadge = document.createElement('span');
         wordBadge.className = 'word-badge';
@@ -287,18 +418,20 @@
         card.appendChild(wordBadge);
       }
 
-      // Rotación con doble clic
-      card.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        const currentRot = (parseInt(img.dataset.rotation) + 90) % 360;
-        img.dataset.rotation = currentRot;
-        img.style.transform = 'rotate(' + currentRot + 'deg)';
-        const regIndex = pageRegistry.findIndex(p => p.id === data.id);
-        if (regIndex > -1) pageRegistry[regIndex].rotation = currentRot;
+      // Herramientas de rotación/espejo (Requerimiento #2)
+      const toolsWrapper = document.createElement('div');
+      toolsWrapper.innerHTML = buildCardToolsHTML();
+      const toolsEl = toolsWrapper.firstElementChild;
+      toolsEl.querySelectorAll('.card-tool').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          applyTransform(data.id, btn.dataset.action);
+        });
       });
 
       card.appendChild(btnDel);
-      card.appendChild(img);
+      card.appendChild(frame);
+      card.appendChild(toolsEl);
       workspace.appendChild(card);
     }
 
@@ -327,6 +460,8 @@
         fileId,
         pageIndex: pageIdx,
         rotation: 0,
+        mirrorH: false,
+        mirrorV: false,
         thumb: null,
         isFailed: true
       });
@@ -348,6 +483,12 @@
         const totalPages = pdf.numPages;
 
         for (let i = 1; i <= totalPages; i++) {
+          // Fix #7: límite duro de páginas totales para proteger la memoria del navegador
+          if (pageRegistry.length >= MAX_TOTAL_PAGES) {
+            showToast('Se alcanzó el límite de ' + MAX_TOTAL_PAGES + ' páginas. El resto de "' + file.name + '" no se cargó.', 'warning');
+            break;
+          }
+
           updateProgress(i, totalPages);
           if (i % 5 === 0) await new Promise(r => setTimeout(r, 1));
 
@@ -365,6 +506,8 @@
               fileId,
               pageIndex: i - 1,
               rotation: 0,
+              mirrorH: false,
+              mirrorV: false,
               thumb: canvas.toDataURL('image/jpeg', 0.5),
               isWord: false
             };
@@ -388,6 +531,40 @@
     }
 
     /* ═══════════════════════════════════════════════
+       DIVIDIR CONTENIDO WORD EN PÁGINAS REALES (Fix #1)
+       Reemplaza el antiguo fallback que empujaba números
+       enteros en vez de nodos, generando hojas en blanco.
+       ═══════════════════════════════════════════════ */
+    function splitBodyIntoPages(bodyEl, pageHeightPx) {
+      const candidateNodes = Array.from(bodyEl.childNodes).filter(n =>
+        n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim().length > 0)
+      );
+
+      if (candidateNodes.length === 0) return [];
+
+      const pages = [];
+      let current = [];
+      let currentHeight = 0;
+
+      candidateNodes.forEach(node => {
+        const h = (node.nodeType === 1 && typeof node.offsetHeight === 'number')
+          ? node.offsetHeight
+          : 20; // estimación para nodos de texto sueltos
+
+        if (currentHeight + h > pageHeightPx && current.length > 0) {
+          pages.push(current);
+          current = [];
+          currentHeight = 0;
+        }
+        current.push(node);
+        currentHeight += h;
+      });
+
+      if (current.length > 0) pages.push(current);
+      return pages;
+    }
+
+    /* ═══════════════════════════════════════════════
        PROCESAR WORD (DOCX) → renderizar como imagen
        ═══════════════════════════════════════════════ */
     async function processWord(file, fileId, buffer) {
@@ -395,8 +572,14 @@
         showToast('El archivo "' + file.name + '" no es un DOCX válido.', 'error');
         return;
       }
-      if (typeof mammoth === 'undefined') {
+      if (!MAMMOTH_OK) {
         showToast('Librería mammoth.js no disponible. No se puede procesar Word.', 'error');
+        return;
+      }
+      // Fix #4: si html2canvas no cargó, se aborta ANTES de generar nada,
+      // en vez de crear hojas en blanco silenciosas.
+      if (!HTML2CANVAS_OK) {
+        showToast('html2canvas no disponible: "' + file.name + '" no se procesó (se habría generado en blanco).', 'error');
         return;
       }
 
@@ -408,7 +591,6 @@
           return;
         }
 
-        // Crear un iframe temporal para renderizar el HTML y capturar páginas A4
         const iframe = document.createElement('iframe');
         iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;height:1123px;';
         iframe.sandbox = 'allow-same-origin';
@@ -425,19 +607,15 @@
           '</style></head><body>' + html + '</body></html>');
         iframeDoc.close();
 
-        // Esperar renderizado
         await new Promise(r => setTimeout(r, 500));
 
         const body = iframeDoc.body;
-        const totalHeight = body.scrollHeight;
         const pageHeight = 1123; // px equivalentes a A4
 
-        // Detectar saltos de página explícitos
         const pageBreaks = body.querySelectorAll('.page-break, [style*="page-break-after"], hr[style*="page-break"]');
 
         let pages = [];
         if (pageBreaks.length > 0) {
-          // Dividir por saltos de página explícitos
           let currentPageContent = [];
           const allNodes = Array.from(body.childNodes);
           for (const node of allNodes) {
@@ -454,61 +632,52 @@
           }
           if (currentPageContent.length > 0) pages.push(currentPageContent);
         } else {
-          // Dividir por altura (aproximación A4)
-          const totalPagesEst = Math.max(1, Math.ceil(totalHeight / pageHeight));
-          for (let p = 0; p < totalPagesEst; p++) {
-            pages.push([p]);
-          }
+          // Fix #1: división real por altura acumulada de nodos, ya NO por
+          // números de página vacíos. Cada elemento de "pages" es ahora
+          // siempre un array de nodos reales del documento.
+          pages = splitBodyIntoPages(body, pageHeight);
         }
 
-        // Renderizar cada página como imagen via html2canvas o canvas manual
-        const offscreenCanvas = document.getElementById('offscreen-canvas');
-        if (offscreenCanvas && typeof html2canvas !== 'undefined') {
-          // Crear un div temporal con el contenido de cada página
-          for (let p = 0; p < pages.length; p++) {
-            updateProgress(p + 1, pages.length);
+        if (pages.length === 0) {
+          showToast('No se pudo determinar contenido paginable en "' + file.name + '".', 'warning');
+          document.body.removeChild(iframe);
+          return;
+        }
 
-            const tempDiv = document.createElement('div');
-            tempDiv.style.cssText = 'width:794px;padding:50px 56px;box-sizing:border-box;background:#fff;font-family:Arial,sans-serif;font-size:12pt;line-height:1.6;color:#333;';
-            if (Array.isArray(pages[p])) {
-              pages[p].forEach(node => tempDiv.appendChild(node.cloneNode(true)));
-            }
-            document.body.appendChild(tempDiv);
-
-            try {
-              const canvas = await html2canvas(tempDiv, { scale: 0.3, useCORS: true, logging: false, width: 794 });
-              const pageId = fileId + '_w_' + (p + 1);
-              const nodeData = {
-                id: pageId,
-                fileId,
-                pageIndex: p,
-                rotation: 0,
-                thumb: canvas.toDataURL('image/jpeg', 0.5),
-                isWord: true
-              };
-              pageRegistry.push(nodeData);
-              createCardInDOM(nodeData);
-              canvas.width = 0;
-            } catch (e) {
-              createFailedCard(fileId, p, 'Word pág ' + (p + 1));
-            }
-            document.body.removeChild(tempDiv);
+        for (let p = 0; p < pages.length; p++) {
+          if (pageRegistry.length >= MAX_TOTAL_PAGES) {
+            showToast('Se alcanzó el límite de ' + MAX_TOTAL_PAGES + ' páginas. El resto de "' + file.name + '" no se cargó.', 'warning');
+            break;
           }
-        } else {
-          // Fallback: crear tarjetas placeholder sin thumbnail
-          for (let p = 0; p < pages.length; p++) {
+          updateProgress(p + 1, pages.length);
+
+          const tempDiv = document.createElement('div');
+          tempDiv.style.cssText = 'width:794px;padding:50px 56px;box-sizing:border-box;background:#fff;font-family:Arial,sans-serif;font-size:12pt;line-height:1.6;color:#333;';
+          pages[p].forEach(node => tempDiv.appendChild(node.cloneNode(true)));
+          document.body.appendChild(tempDiv);
+
+          try {
+            // Fix #2: resolución subida de 0.3 a 2 para que el foliado y la
+            // impresión de documentos oficiales no salgan borrosos.
+            const canvas = await html2canvas(tempDiv, { scale: 2, useCORS: true, logging: false, width: 794 });
             const pageId = fileId + '_w_' + (p + 1);
             const nodeData = {
               id: pageId,
               fileId,
               pageIndex: p,
               rotation: 0,
-              thumb: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="130" height="185"><rect width="130" height="185" fill="#f0f4f8"/><text x="65" y="80" text-anchor="middle" font-size="14" fill="#00529b" font-family="Arial">WORD</text><text x="65" y="105" text-anchor="middle" font-size="11" fill="#666" font-family="Arial">Hoja ' + (p + 1) + '</text></svg>'),
+              mirrorH: false,
+              mirrorV: false,
+              thumb: canvas.toDataURL('image/jpeg', 0.75),
               isWord: true
             };
             pageRegistry.push(nodeData);
             createCardInDOM(nodeData);
+            canvas.width = 0;
+          } catch (e) {
+            createFailedCard(fileId, p, 'Word pág ' + (p + 1));
           }
+          document.body.removeChild(tempDiv);
         }
 
         document.body.removeChild(iframe);
@@ -531,12 +700,22 @@
         return;
       }
 
+      // Fix #7: aviso (no bloqueante) si el lote es muy pesado en bytes
+      const totalBytes = allFiles.reduce((acc, f) => acc + f.size, 0);
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        showToast('El lote pesa más de ' + Math.round(MAX_TOTAL_BYTES / (1024 * 1024)) + 'MB. El navegador podría ir lento.', 'warning');
+      }
+
+      if (pageRegistry.length >= MAX_TOTAL_PAGES) {
+        showToast('Ya alcanzaste el límite de ' + MAX_TOTAL_PAGES + ' páginas en el workspace.', 'error');
+        return;
+      }
+
       showLoader('Procesando archivos...', true);
       btnGenerate.disabled = true;
       const totalFiles = pdfs.length + docxs.length;
       let processed = 0;
 
-      // Procesar PDFs
       for (const file of pdfs) {
         const fileId = generateId();
         const buffer = await file.arrayBuffer();
@@ -546,7 +725,6 @@
         updateProgress(processed, totalFiles);
       }
 
-      // Procesar DOCXs
       for (const file of docxs) {
         const fileId = generateId();
         const buffer = await file.arrayBuffer();
@@ -566,110 +744,193 @@
     }
 
     /* ═══════════════════════════════════════════════
+       GEOMETRÍA: desplazamiento de pivote por rotación
+       (deriva de cómo un /Rotate clockwise reubica las
+       esquinas de la hoja; usado para "hornear" la
+       rotación directamente en el contenido, en vez de
+       usar el flag /Rotate de la página — así el foleo
+       puede dibujarse SIEMPRE en el mismo punto fijo).
+       ═══════════════════════════════════════════════ */
+    function getRotateOffset(rot, contentW, contentH) {
+      if (rot === 90)  return { x: 0, y: contentW };
+      if (rot === 180) return { x: contentW, y: contentH };
+      if (rot === 270) return { x: contentH, y: 0 };
+      return { x: 0, y: 0 };
+    }
+
+    /* Rota (clockwise, igual convención que rot) un vector (a,b) */
+    function rotateVector(a, b, rot) {
+      if (rot === 90)  return { x: b, y: -a };
+      if (rot === 180) return { x: -a, y: -b };
+      if (rot === 270) return { x: -b, y: a };
+      return { x: a, y: b };
+    }
+
+    /*
+      Dibuja `drawable` (imagen o página incrustada) sobre `page`, ya rotado
+      y espejado (combinables — Requerimiento #2), horneando la transformación
+      directamente en el contenido para que `page` NUNCA use /Rotate.
+      Esto es lo que permite que el foleo se dibuje siempre en el mismo punto
+      fijo (arriba-derecha) sin importar rot/mirror — Requerimiento #3.
+    */
+    function drawTransformedContent(page, drawFn, contentW, contentH, rot, mirrorH, mirrorV) {
+      const rotateOffset = getRotateOffset(rot, contentW, contentH);
+
+      // Offset adicional por espejo, calculado en el marco LOCAL (antes de
+      // rotar) y luego rotado junto con el resto, para que espejo+rotación
+      // combinados no se desalineen entre sí.
+      const localMirrorOffsetX = mirrorH ? contentW : 0;
+      const localMirrorOffsetY = mirrorV ? contentH : 0;
+      const rotatedMirrorOffset = rotateVector(localMirrorOffsetX, localMirrorOffsetY, rot);
+
+      const finalX = rotateOffset.x + rotatedMirrorOffset.x;
+      const finalY = rotateOffset.y + rotatedMirrorOffset.y;
+
+      drawFn({
+        x: finalX,
+        y: finalY,
+        width: mirrorH ? -contentW : contentW,
+        height: mirrorV ? -contentH : contentH,
+        rotate: PDFLib.degrees(rot)
+      });
+    }
+
+    /* ═══════════════════════════════════════════════
        GENERAR PDF UNIFICADO
        ═══════════════════════════════════════════════ */
     btnGenerate.addEventListener('click', async () => {
       if (pageRegistry.length === 0 || isGenerating) return;
 
       isGenerating = true;
-      const applyFoleo   = chkFoleo && chkFoleo.checked;
+      const applyFoleo    = chkFoleo && chkFoleo.checked;
       const applyFoleoInv = chkFoleoInv && chkFoleoInv.checked;
-      const optimize     = chkOptimize && chkOptimize.checked;
-      let folioNum       = parseInt((folioStart && folioStart.value) || 1) || 1;
+      const optimize       = chkOptimize && chkOptimize.checked;
+      let folioNum         = parseInt((folioStart && folioStart.value) || 1) || 1;
 
       showLoader('Compilando documento final...', true);
 
       try {
         const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib;
         const finalPdf   = await PDFDocument.create();
-        const loadedDocs = new Map();
+        const loadedSrcDocs = new Map();
 
-        // Cargar PDFs
         for (const [fileId, entry] of pdfDocumentsData.entries()) {
           try {
-            loadedDocs.set(fileId, await PDFDocument.load(entry.buffer, { ignoreEncryption: true }));
+            loadedSrcDocs.set(fileId, await PDFDocument.load(entry.buffer, { ignoreEncryption: true }));
           } catch (e) {
             console.error('Error al cargar ' + entry.name, e);
           }
         }
 
-        // Para páginas Word: crear un PDF temporal con la imagen insertada
-        for (const [fileId, entry] of wordDocumentsData.entries()) {
-          try {
-            loadedDocs.set(fileId, { isWord: true, name: entry.name });
-          } catch (e) {
-            console.error('Error Word buffer ' + entry.name, e);
-          }
-        }
-
         const font = await finalPdf.embedFont(StandardFonts.HelveticaBold);
 
-        // Si foleo inverso, calcular valor inicial (última página = número más bajo)
+        // Fix #3 (bug de foleo inverso): el conteo para el número inicial
+        // debe excluir páginas fallidas, igual que el loop que las salta.
+        const validPages = pageRegistry.filter(p => !p.isFailed);
         if (applyFoleo && applyFoleoInv) {
-          folioNum = folioNum + pageRegistry.length - 1;
+          folioNum = folioNum + validPages.length - 1;
         }
+
+        const BASE_W = 595.28, BASE_H = 841.89; // A4 en puntos
 
         for (let i = 0; i < pageRegistry.length; i++) {
           updateProgress(i, pageRegistry.length);
           if (i % 10 === 0) await new Promise(r => setTimeout(r, 1));
 
           const req = pageRegistry[i];
-          if (req.isFailed) continue; // Saltar páginas fallidas
+          if (req.isFailed) continue;
 
-          const src = loadedDocs.get(req.fileId);
-          if (!src) continue;
+          const rot   = req.rotation || 0;
+          const mH    = !!req.mirrorH;
+          const mV    = !!req.mirrorV;
+          const swapDims = (rot === 90 || rot === 270);
 
-          if (src.isWord) {
-            // Páginas Word: insertar como imagen en página A4
-            if (req.thumb && !req.thumb.startsWith('data:image/svg')) {
-              const page = finalPdf.addPage([595.28, 841.89]); // A4 portrait
+          let newPage;
+
+          if (req.isWord) {
+            if (!req.thumb || req.thumb.startsWith('data:image/svg')) {
+              newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
+            } else {
+              const pageW = swapDims ? BASE_H : BASE_W;
+              const pageH = swapDims ? BASE_W : BASE_H;
+
               try {
                 const imgBytes = await fetch(req.thumb).then(r => r.arrayBuffer());
-                let image;
-                if (req.thumb.startsWith('data:image/jpeg') || req.thumb.startsWith('data:image/jpg')) {
-                  image = await finalPdf.embedJpg(imgBytes);
-                } else {
-                  image = await finalPdf.embedPng(imgBytes);
-                }
-                const dims = image.scaleToFit(515, 740);
-                page.drawImage(image, {
-                  x: (595.28 - dims.width) / 2,
-                  y: (841.89 - dims.height) / 2,
-                  width: dims.width,
-                  height: dims.height
+                const image = (req.thumb.startsWith('data:image/jpeg') || req.thumb.startsWith('data:image/jpg'))
+                  ? await finalPdf.embedJpg(imgBytes)
+                  : await finalPdf.embedPng(imgBytes);
+
+                const dims = image.scaleToFit(BASE_W - 80, BASE_H - 100);
+                const marginX = (BASE_W - dims.width) / 2;
+                const marginY = (BASE_H - dims.height) / 2;
+
+                // Paso 1: página "canónica" sin rotar, tamaño A4 fijo, con la
+                // imagen centrada normalmente (igual que antes). Esto evita
+                // mezclar el margen de centrado con la matemática de rotación.
+                const canonicalPage = finalPdf.addPage([BASE_W, BASE_H]);
+                canonicalPage.drawImage(image, {
+                  x: marginX, y: marginY,
+                  width: dims.width, height: dims.height
                 });
+                const embeddedCanonical = await finalPdf.embedPage(canonicalPage);
+                const canonicalIndex = finalPdf.getPages().indexOf(canonicalPage);
+                finalPdf.removePage(canonicalIndex); // no debe quedar en el PDF final
+
+                // Paso 2: la página real (con dimensiones ya intercambiadas
+                // si corresponde) recibe esa página canónica horneada con
+                // rotación + espejo combinados.
+                newPage = finalPdf.addPage([pageW, pageH]);
+                drawTransformedContent(
+                  newPage,
+                  (opts) => newPage.drawPage(embeddedCanonical, opts),
+                  BASE_W, BASE_H, rot, mH, mV
+                );
               } catch (e) {
                 console.error('Error al insertar imagen Word:', e);
+                newPage = finalPdf.addPage([pageW, pageH]);
               }
-            } else {
-              finalPdf.addPage([595.28, 841.89]);
             }
           } else {
-            // Páginas PDF normales
-            try {
-              const [copiedPage] = await finalPdf.copyPages(src, [req.pageIndex]);
-              if (req.rotation !== 0) {
-                const currentRot = copiedPage.getRotation().angle;
-                copiedPage.setRotation(degrees(currentRot + req.rotation));
+            const srcDoc = loadedSrcDocs.get(req.fileId);
+            if (!srcDoc) {
+              newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
+            } else {
+              try {
+                const srcPages = srcDoc.getPages();
+                const srcPage = srcPages[req.pageIndex];
+                const { width: srcW, height: srcH } = srcPage.getSize();
+                const embedded = await finalPdf.embedPage(srcPage);
+
+                const pageW = swapDims ? srcH : srcW;
+                const pageH = swapDims ? srcW : srcH;
+                newPage = finalPdf.addPage([pageW, pageH]);
+
+                drawTransformedContent(
+                  newPage,
+                  (opts) => newPage.drawPage(embedded, opts),
+                  srcW, srcH, rot, mH, mV
+                );
+              } catch (e) {
+                console.error('Error al incrustar página original:', e);
+                newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
               }
-              finalPdf.addPage(copiedPage);
-            } catch (e) {
-              finalPdf.addPage([595.28, 841.89]);
             }
           }
 
-          // Foleo
+          // ── FOLEO — Requerimiento #3 ──
+          // `newPage` NUNCA tiene /Rotate propio (la rotación ya está
+          // horneada en el contenido arriba), así que el número SIEMPRE
+          // se dibuja en el mismo punto fijo arriba-derecha, sin excepción.
           if (applyFoleo) {
-            const lastPage = finalPdf.getPage(finalPdf.getPageCount() - 1);
-            const { width, height } = lastPage.getSize();
-            const fStr = String(applyFoleoInv ? folioNum : folioNum).padStart(3, '0');
+            const { width, height } = newPage.getSize();
+            const fStr = String(folioNum).padStart(3, '0');
 
-            lastPage.drawRectangle({
+            newPage.drawRectangle({
               x: width - 40, y: height - 25,
               width: 30, height: 16,
               color: rgb(1, 1, 1)
             });
-            lastPage.drawText(fStr, {
+            newPage.drawText(fStr, {
               x: width - 36, y: height - 21,
               size: 11, font,
               color: rgb(0, 0, 0)
@@ -691,7 +952,7 @@
         revokedUrls.add(url);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'SEDAPAL_Unificado_' + new Date().toISOString().split('T')[0] + '.pdf';
+        link.download = resolveOutputFilename(); // Requerimiento #1
         link.click();
 
         setTimeout(() => {
@@ -765,7 +1026,6 @@
         if (invRow) invRow.style.display = chkFoleo.checked ? '' : 'none';
         if (!chkFoleo.checked) chkFoleoInv.checked = false;
       });
-      // Estado inicial
       if (invRow) invRow.style.display = chkFoleo.checked ? '' : 'none';
     }
 
@@ -777,6 +1037,6 @@
       revokedUrls.clear();
     });
 
-    console.log('✅ UNIFICADOR SEDAPAL — inicializado. PDF + DOCX + Multi-Drag.');
+    console.log('✅ UNIFICADOR SEDAPAL — inicializado. PDF + DOCX + Multi-Drag + Rotación/Espejo.');
   }
 })();
