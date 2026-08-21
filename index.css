@@ -705,16 +705,43 @@ footer {
 
 /* Marco con proporción real de hoja A4 (1 : 1.4142) — la imagen se ve
    como una hoja completa, no recortada ni encogida artificialmente. */
+/* La proporción real (aspect-ratio) se fija por JS según cada hoja
+   (considerando su rotación) — aquí solo se acotan los límites máximos. */
 .modal-image-wrap {
   position: relative;
-  height: min(74vh, 78vw * 1.4142);
-  aspect-ratio: 1 / 1.4142;
+  max-height: 74vh;
   max-width: 100%;
+  aspect-ratio: 1 / 1.4142; /* valor de arranque por defecto, antes de abrir la primera hoja */
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--gray-50);
   border-radius: var(--radius-sm);
+}
+
+.modal-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.55);
+  border-radius: var(--radius-sm);
+}
+
+.modal-loader.hidden { display: none; }
+
+.modal-loader .loader {
+  width: 34px;
+  height: 34px;
+  border-width: 4px;
+}
+
+.modal-page-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gray-600);
+  white-space: nowrap;
 }
 
 .modal-image {
