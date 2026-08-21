@@ -80,15 +80,6 @@
                 <span class="control-hint" title="El número de foleo siempre se dibuja arriba a la derecha de la hoja final, sin importar la rotación o el espejo aplicado.">ⓘ Foleo siempre arriba-derecha</span>
             </fieldset>
 
-            <!-- Panel: alcance de rotación / espejo -->
-            <fieldset class="scope-panel">
-                <legend class="sr-only">Alcance de rotación y espejo</legend>
-                <span class="control-hint" title="Sin selección: afecta solo la hoja donde hagas clic. Con varias hojas seleccionadas (Ctrl): afecta a todas las seleccionadas.">ⓘ Rotar/Espejar afecta la hoja clicada, o todas las seleccionadas con Ctrl</span>
-                <label class="control-item">
-                    <input type="checkbox" id="chk-scope-all" /> Todas
-                </label>
-            </fieldset>
-
             <!-- Panel: nombre del archivo de salida -->
             <div class="filename-panel">
                 <label for="output-filename">Nombre del archivo:</label>
@@ -129,6 +120,23 @@
 
     <!-- Contenedor de toasts -->
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+    <!-- Modal: vista ampliada de una página (doble clic en una tarjeta) -->
+    <div id="page-modal" class="page-modal hidden" role="dialog" aria-modal="true" aria-label="Vista ampliada de la página">
+        <div id="modal-backdrop" class="page-modal-backdrop"></div>
+        <div class="page-modal-content">
+            <button id="modal-close" class="modal-close" aria-label="Cerrar vista ampliada">✖</button>
+            <button id="modal-prev" class="modal-nav modal-prev" aria-label="Página anterior">‹</button>
+            <img id="modal-image" class="modal-image" alt="Vista ampliada de la página" />
+            <button id="modal-next" class="modal-nav modal-next" aria-label="Página siguiente">›</button>
+            <div class="modal-toolbar">
+                <div id="modal-tools" class="modal-tools" role="group" aria-label="Rotar y espejar página ampliada"></div>
+                <label class="control-item">
+                    <input type="checkbox" id="modal-apply-all" /> Aplicar a todas
+                </label>
+            </div>
+        </div>
+    </div>
 
     <script defer src="index.js"></script>
     <script>
