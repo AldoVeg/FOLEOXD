@@ -138,16 +138,18 @@
         <div id="modal-backdrop" class="page-modal-backdrop"></div>
         <div class="page-modal-content">
             <button id="modal-close" class="modal-close" aria-label="Cerrar vista ampliada">✖</button>
-            <div class="modal-image-wrap">
+            <div id="modal-image-wrap" class="modal-image-wrap">
                 <button id="modal-prev" class="modal-nav modal-prev" aria-label="Página anterior">‹</button>
                 <img id="modal-image" class="modal-image" alt="Vista ampliada de la página" />
                 <button id="modal-next" class="modal-nav modal-next" aria-label="Página siguiente">›</button>
+                <div id="modal-loader" class="modal-loader hidden" aria-hidden="true"><div class="loader"></div></div>
             </div>
             <div class="modal-toolbar">
                 <div id="modal-tools" class="modal-tools" role="group" aria-label="Rotar y espejar página ampliada"></div>
                 <label class="control-item">
                     <input type="checkbox" id="modal-apply-all" /> Aplicar a todas
                 </label>
+                <span id="modal-page-count" class="modal-page-count"></span>
             </div>
         </div>
     </div>
