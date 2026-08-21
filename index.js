@@ -67,6 +67,7 @@
     const modalHighResCache = new Map(); // pageId -> dataURL (solo dura la sesión del modal)
     const modalPdfDocCache  = new Map(); // fileId -> documento pdf.js ya cargado (solo dura la sesión)
     const HIGH_RES_SCALE = 2.2;
+    const HIGH_RES_CACHE_CAP = 20; // últimas hojas vistas en nítido, por sesión de modal
 
     const generateId = () => {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -287,9 +288,21 @@
     const btnForceHorizontal = document.getElementById('btn-force-horizontal');
 
     function updateSelectionUI() {
-      if (!selectionBar) return;
       const count = document.querySelectorAll('.page-card.selected').length;
       const todasOn = chkTodas && chkTodas.checked;
+
+      // Las flechas de una hoja NO seleccionada quedan en opacity:0 (CSS),
+      // pero sin esto seguirían siendo alcanzables con Tab aunque invisibles
+      // — un usuario navegando por teclado "aterrizaría" en un botón que no
+      // puede ver. Se sacan del orden de tabulación mientras no se muestren.
+      document.querySelectorAll('.page-card').forEach(card => {
+        const isSel = card.classList.contains('selected');
+        card.querySelectorAll('.card-tool').forEach(btn => {
+          btn.tabIndex = isSel ? 0 : -1;
+        });
+      });
+
+      if (!selectionBar) return;
       const visible = count >= 1 || todasOn;
       selectionBar.classList.toggle('hidden', !visible);
       if (selectionCount) {
@@ -528,6 +541,13 @@
       canvas.width = 0;
 
       modalHighResCache.set(record.id, dataUrl);
+      // Tope de la caché (probado con simulación: siempre descarta lo más
+      // antiguo primero) — así navegar muchas hojas dentro de una misma
+      // sesión del modal no acumula memoria sin límite.
+      if (modalHighResCache.size > HIGH_RES_CACHE_CAP) {
+        const oldestKey = modalHighResCache.keys().next().value;
+        modalHighResCache.delete(oldestKey);
+      }
       return dataUrl;
     }
 
@@ -577,6 +597,9 @@
         modalImage.src = highResUrl;
       } catch (e) {
         console.error('Error al generar vista en alta resolución:', e);
+        if (myToken === modalState.requestToken) {
+          showToast('No se pudo generar la vista nítida de esta hoja; se muestra la miniatura.', 'warning');
+        }
       } finally {
         if (myToken === modalState.requestToken) {
           if (modalLoader) modalLoader.classList.add('hidden');
@@ -655,6 +678,10 @@
       btnDel.addEventListener('click', (e) => {
         e.stopPropagation();
         const selected = document.querySelectorAll('.page-card.selected');
+        const isGroupDelete = selected.length > 1 && card.classList.contains('selected');
+        if (isGroupDelete && !window.confirm('¿Eliminar ' + selected.length + ' hojas seleccionadas? Esta acción no se puede deshacer.')) {
+          return;
+        }
         if (selected.length > 0 && card.classList.contains('selected')) {
           selected.forEach(c => c.remove());
         } else {
@@ -698,6 +725,7 @@
       toolsWrapper.innerHTML = buildCardToolsHTML();
       const toolsEl = toolsWrapper.firstElementChild;
       toolsEl.querySelectorAll('.card-tool').forEach(btn => {
+        btn.tabIndex = -1; // arranca fuera del orden de tabulación (no seleccionada aún)
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           applyTransform(data.id, btn.dataset.action);
@@ -1286,6 +1314,12 @@
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const selected = document.querySelectorAll('.page-card.selected');
+        // Con más de 1 hoja, se pide confirmar — es la acción más
+        // destructiva de la app y la más fácil de disparar sin querer
+        // (por ejemplo, tras arrastrar/seleccionar varias por error).
+        if (selected.length > 1 && !window.confirm('¿Eliminar ' + selected.length + ' hojas seleccionadas? Esta acción no se puede deshacer.')) {
+          return;
+        }
         if (selected.length > 0) {
           selected.forEach(c => c.remove());
           syncRegistryWithDOM();
@@ -1324,9 +1358,16 @@
     /* ═══════════════════════════════════════════════
        LIMPIEZA AL CERRAR
        ═══════════════════════════════════════════════ */
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', (e) => {
       revokedUrls.forEach(url => URL.revokeObjectURL(url));
       revokedUrls.clear();
+
+      // Avisa antes de cerrar/recargar si hay páginas cargadas sin exportar
+      // — perder un lote organizado y foliado sin aviso sería el peor caso.
+      if (pageRegistry.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     });
 
     console.log('✅ UNIFICADOR SEDAPAL — inicializado. PDF + DOCX + Multi-Drag + Rotación/Espejo.');
