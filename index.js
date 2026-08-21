@@ -60,6 +60,7 @@
     let pageRegistry      = [];
     let multiDragGroup    = null;
     let multiDragAnchor   = null;
+    let autoSelectedByDrag = null;
     let isGenerating      = false;
     const revokedUrls     = new Set();
     const modalState      = { currentId: null };
@@ -169,10 +170,17 @@
           if (!card.classList.contains('selected')) {
             document.querySelectorAll('.page-card.selected').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
+            // Marca que ESTA selección fue solo un efecto secundario del
+            // arrastre (para reordenar), no una selección deliberada del
+            // usuario — así en onEnd se revierte y no deja flechas abiertas
+            // "pegadas" después de cada vez que reordenas una hoja.
+            autoSelectedByDrag = card.dataset.id;
             multiDragGroup = null;
             multiDragAnchor = null;
             return;
           }
+
+          autoSelectedByDrag = null;
 
           if (selected.length <= 1) {
             multiDragGroup = null;
@@ -200,10 +208,20 @@
         },
 
         onEnd() {
+          // Revierte la "selección" que fue solo efecto colateral del
+          // arrastre — así el reordenamiento normal no deja las flechas
+          // de esa hoja abiertas después de soltarla.
+          if (autoSelectedByDrag) {
+            const draggedCard = document.querySelector('[data-id="' + autoSelectedByDrag + '"]');
+            if (draggedCard) draggedCard.classList.remove('selected');
+            autoSelectedByDrag = null;
+          }
+
           if (!multiDragGroup || multiDragGroup.length === 0) {
             const badge = document.querySelector('.multi-drag-badge');
             if (badge) badge.remove();
             syncRegistryWithDOM();
+            updateSelectionUI();
             return;
           }
 
@@ -226,6 +244,7 @@
           multiDragGroup = null;
           multiDragAnchor = null;
           syncRegistryWithDOM();
+          updateSelectionUI();
         }
       });
     }
@@ -236,11 +255,15 @@
 
     function getTransformScope() {
       const selectedCount = document.querySelectorAll('.page-card.selected').length;
+      if (chkTodas && chkTodas.checked) return 'all';
       return selectedCount > 1 ? 'selected' : 'this';
     }
 
     function resolveTargetIds(clickedId) {
       const scope = getTransformScope();
+      if (scope === 'all') {
+        return pageRegistry.filter(p => !p.isFailed).map(p => p.id);
+      }
       if (scope === 'selected') {
         const ids = Array.from(document.querySelectorAll('.page-card.selected'))
           .map(c => c.dataset.id);
@@ -248,6 +271,77 @@
       }
       return [clickedId];
     }
+
+    /* ═══════════════════════════════════════════════
+       BARRA FLOTANTE DE SELECCIÓN
+       Solo visible con selección activa o "Todas" marcado;
+       desaparece del todo en cualquier otro caso.
+       ═══════════════════════════════════════════════ */
+    const selectionBar       = document.getElementById('selection-bar');
+    const selectionCount     = document.getElementById('selection-count');
+    const chkTodas           = document.getElementById('chk-todas');
+    const btnForceVertical   = document.getElementById('btn-force-vertical');
+    const btnForceHorizontal = document.getElementById('btn-force-horizontal');
+
+    function updateSelectionUI() {
+      if (!selectionBar) return;
+      const count = document.querySelectorAll('.page-card.selected').length;
+      const todasOn = chkTodas && chkTodas.checked;
+      const visible = count >= 1 || todasOn;
+      selectionBar.classList.toggle('hidden', !visible);
+      if (selectionCount) {
+        selectionCount.textContent = todasOn
+          ? 'Todas las hojas'
+          : (count === 1 ? '1 hoja seleccionada' : count + ' hojas seleccionadas');
+      }
+    }
+
+    if (chkTodas) chkTodas.addEventListener('change', updateSelectionUI);
+
+    /* ── FORZAR VERTICAL / HORIZONTAL (Fix: acción absoluta e idempotente,
+       no daña hojas que ya están en la orientación deseada — a diferencia
+       de "rotar", que siempre suma 90° sin importar el estado actual) ── */
+    function effectiveOrientation(record) {
+      const swapped = (record.rotation === 90 || record.rotation === 270);
+      const base = record.baseOrientation || 'vertical';
+      if (!swapped) return base;
+      return base === 'vertical' ? 'horizontal' : 'vertical';
+    }
+
+    function forceOrientation(desired) {
+      const todasOn = chkTodas && chkTodas.checked;
+      const idsToUse = todasOn
+        ? pageRegistry.filter(p => !p.isFailed).map(p => p.id)
+        : Array.from(document.querySelectorAll('.page-card.selected')).map(c => c.dataset.id);
+
+      if (idsToUse.length === 0) {
+        showToast('Selecciona al menos una hoja, o marca "Todas".', 'warning');
+        return;
+      }
+
+      let changedCount = 0;
+      idsToUse.forEach(id => {
+        const record = pageRegistry.find(p => p.id === id);
+        if (!record || record.isFailed) return;
+        const current = effectiveOrientation(record);
+        if (current === desired) return; // ya está bien, no se toca (idempotente)
+        record.rotation = (record.rotation + 90) % 360;
+        changedCount++;
+        renderCardTransform(id);
+      });
+
+      if (modalState.currentId) renderModalTransform();
+
+      showToast(
+        changedCount > 0
+          ? changedCount + ' hoja(s) ajustada(s) a ' + (desired === 'vertical' ? 'vertical' : 'horizontal') + '.'
+          : 'Ya estaban todas en esa orientación.',
+        'success'
+      );
+    }
+
+    if (btnForceVertical) btnForceVertical.addEventListener('click', () => forceOrientation('vertical'));
+    if (btnForceHorizontal) btnForceHorizontal.addEventListener('click', () => forceOrientation('horizontal'));
 
     /* Aplica la transformación visual (CSS) + la guarda en el registro de datos.
        `explicitIds`: si se pasa (usado por el modal), ignora resolveTargetIds
@@ -461,6 +555,7 @@
             card.classList.add('selected');
           }
         }
+        updateSelectionUI();
       });
 
       card.addEventListener('dblclick', (e) => {
@@ -494,6 +589,7 @@
           revokedUrls.clear();
           pageRegistry = [];
         }
+        updateSelectionUI();
       });
 
       // Marco recortado + imagen miniatura
@@ -603,6 +699,7 @@
               rotation: 0,
               mirrorH: false,
               mirrorV: false,
+              baseOrientation: viewport.width > viewport.height ? 'horizontal' : 'vertical',
               thumb: canvas.toDataURL('image/jpeg', 0.5),
               isWord: false
             };
@@ -763,6 +860,7 @@
               rotation: 0,
               mirrorH: false,
               mirrorV: false,
+              baseOrientation: canvas.width > canvas.height ? 'horizontal' : 'vertical',
               thumb: canvas.toDataURL('image/jpeg', 0.75),
               isWord: true
             };
@@ -1104,16 +1202,19 @@
             pdfDocumentsData.clear();
             wordDocumentsData.clear();
           }
+          updateSelectionUI();
         }
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         document.querySelectorAll('.page-card').forEach(c => c.classList.add('selected'));
+        updateSelectionUI();
       }
 
       if (e.key === 'Escape') {
         document.querySelectorAll('.page-card.selected').forEach(c => c.classList.remove('selected'));
+        updateSelectionUI();
       }
     });
 
