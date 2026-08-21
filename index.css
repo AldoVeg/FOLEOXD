@@ -224,7 +224,12 @@ main { display: flex; flex-direction: column; gap: 18px; }
   border-left: 1px solid var(--gray-300);
 }
 
-/* ── WORKSPACE ── */
+/* ── WORKSPACE (grid real: reparte el espacio sobrante entre las
+   tarjetas de cada fila — a menos columnas, cada tarjeta crece) ── */
+.workspace-wrap {
+  position: relative;
+}
+
 .workspace {
   width: 100%;
   min-height: 350px;
@@ -233,8 +238,8 @@ main { display: flex; flex-direction: column; gap: 18px; }
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   padding: 16px;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 14px;
   align-content: flex-start;
   overflow-y: auto;
@@ -255,9 +260,10 @@ main { display: flex; flex-direction: column; gap: 18px; }
 .workspace::-webkit-scrollbar-thumb { background: var(--gray-400); border-radius: 4px; }
 .workspace::-webkit-scrollbar-thumb:hover { background: var(--gray-500); }
 
-/* ── PAGE CARD (responsiva: crece según espacio disponible) ── */
+/* ── PAGE CARD (dentro del grid: el ancho lo da la columna, la
+   altura se deriva por aspect-ratio — crece cuando hay menos por fila) ── */
 .page-card {
-  width: clamp(110px, 15vw, 210px);
+  width: 100%;
   aspect-ratio: 2 / 3;
   border: 1px solid var(--gray-300);
   background: var(--white);
@@ -606,6 +612,56 @@ progress::-moz-progress-bar {
   border: 0;
 }
 
+/* ── BARRA FLOTANTE DE SELECCIÓN ──
+   Solo existe mientras hay al menos 1 hoja seleccionada o "Todas" activo;
+   desaparece por completo (display:none) al dejar de seleccionar. */
+.selection-bar {
+  position: sticky;
+  bottom: 10px;
+  margin: 10px auto 0;
+  width: fit-content;
+  max-width: 96%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  background: rgba(255,255,255,0.97);
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  padding: 8px 18px;
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+}
+
+.selection-bar.hidden { display: none; }
+
+.selection-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sedapal-blue);
+  white-space: nowrap;
+}
+
+.btn-force {
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--gray-700);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.btn-force:hover {
+  background: var(--sedapal-light);
+  border-color: var(--sedapal-blue);
+  color: var(--sedapal-blue);
+}
+
 /* ── FOOTER ── */
 footer {
   text-align: center;
@@ -639,17 +695,31 @@ footer {
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   padding: 20px;
-  width: min(640px, 92vw);
-  max-height: 90vh;
+  width: min(720px, 94vw);
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
 }
 
+/* Marco con proporción real de hoja A4 (1 : 1.4142) — la imagen se ve
+   como una hoja completa, no recortada ni encogida artificialmente. */
+.modal-image-wrap {
+  position: relative;
+  height: min(74vh, 78vw * 1.4142);
+  aspect-ratio: 1 / 1.4142;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+}
+
 .modal-image {
   max-width: 100%;
-  max-height: 62vh;
+  max-height: 100%;
   object-fit: contain;
   transition: transform var(--transition);
 }
@@ -666,32 +736,37 @@ footer {
   color: var(--gray-700);
   font-size: 14px;
   cursor: pointer;
+  z-index: 2;
 }
 
 .modal-close:hover { background: var(--gray-200); }
 
+/* Los botones de navegación ahora se centran SOLO respecto al marco de
+   la imagen (.modal-image-wrap), no respecto a todo el modal — así ya
+   no caen encima de la barra de herramientas de abajo. */
 .modal-nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.92);
   box-shadow: var(--shadow);
   color: var(--sedapal-blue);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: bold;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
 }
 
 .modal-nav:disabled { opacity: 0.3; cursor: not-allowed; }
-.modal-prev { left: -6px; }
-.modal-next { right: -6px; }
+.modal-prev { left: -14px; }
+.modal-next { right: -14px; }
 
 .modal-toolbar {
   display: flex;
@@ -699,6 +774,7 @@ footer {
   gap: 18px;
   flex-wrap: wrap;
   justify-content: center;
+  width: 100%;
 }
 
 .modal-tools {
