@@ -62,6 +62,7 @@
     let multiDragAnchor   = null;
     let isGenerating      = false;
     const revokedUrls     = new Set();
+    const modalState      = { currentId: null };
 
     const generateId = () => {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -234,19 +235,12 @@
        ═══════════════════════════════════════════════ */
 
     function getTransformScope() {
-      const allChk = document.getElementById('chk-scope-all');
-      if (allChk && allChk.checked) return 'all';
       const selectedCount = document.querySelectorAll('.page-card.selected').length;
       return selectedCount > 1 ? 'selected' : 'this';
     }
 
     function resolveTargetIds(clickedId) {
       const scope = getTransformScope();
-      if (scope === 'all') {
-        // "Todas" autoselecciona visualmente todo el workspace, como pediste.
-        document.querySelectorAll('.page-card').forEach(c => c.classList.add('selected'));
-        return pageRegistry.filter(p => !p.isFailed).map(p => p.id);
-      }
       if (scope === 'selected') {
         const ids = Array.from(document.querySelectorAll('.page-card.selected'))
           .map(c => c.dataset.id);
@@ -255,9 +249,13 @@
       return [clickedId];
     }
 
-    /* Aplica la transformación visual (CSS) + la guarda en el registro de datos */
-    function applyTransform(clickedId, action) {
-      const targetIds = resolveTargetIds(clickedId);
+    /* Aplica la transformación visual (CSS) + la guarda en el registro de datos.
+       `explicitIds`: si se pasa (usado por el modal), ignora resolveTargetIds
+       y aplica exactamente a esos ids — así el modal decide su propio alcance
+       (una sola hoja o "todas") sin depender del estado de selección de la
+       grilla principal. */
+    function applyTransform(clickedId, action, explicitIds) {
+      const targetIds = explicitIds || resolveTargetIds(clickedId);
 
       targetIds.forEach(id => {
         const record = pageRegistry.find(p => p.id === id);
@@ -284,6 +282,11 @@
 
         renderCardTransform(id);
       });
+
+      // Si el modal está abierto y la hoja visible fue afectada, refresca su vista.
+      if (modalState.currentId && targetIds.includes(modalState.currentId)) {
+        renderModalTransform();
+      }
     }
 
     /* Refleja rotation/mirrorH/mirrorV en el <img> de la tarjeta (vista previa) */
@@ -338,6 +341,91 @@
     }
 
     /* ═══════════════════════════════════════════════
+       MODAL: VISTA AMPLIADA (doble clic en una tarjeta)
+       ═══════════════════════════════════════════════ */
+    const modalEl        = document.getElementById('page-modal');
+    const modalImage     = document.getElementById('modal-image');
+    const modalPrevBtn   = document.getElementById('modal-prev');
+    const modalNextBtn   = document.getElementById('modal-next');
+    const modalCloseBtn  = document.getElementById('modal-close');
+    const modalBackdrop  = document.getElementById('modal-backdrop');
+    const modalToolsEl   = document.getElementById('modal-tools');
+    const modalApplyAll  = document.getElementById('modal-apply-all');
+
+    function getNavigablePages() {
+      return pageRegistry.filter(p => !p.isFailed);
+    }
+
+    function openModal(id) {
+      const record = pageRegistry.find(p => p.id === id);
+      if (!record || record.isFailed || !modalEl) return;
+      modalState.currentId = id;
+      // El checkbox "Aplicar a todas" siempre arranca desmarcado al abrir,
+      // para que nunca herede un estado invisible de una apertura anterior.
+      if (modalApplyAll) modalApplyAll.checked = false;
+      modalEl.classList.remove('hidden');
+      renderModalTransform();
+      document.addEventListener('keydown', handleModalKeydown);
+    }
+
+    function closeModal() {
+      if (!modalEl) return;
+      modalEl.classList.add('hidden');
+      modalState.currentId = null;
+      document.removeEventListener('keydown', handleModalKeydown);
+    }
+
+    function handleModalKeydown(e) {
+      if (e.key === 'Escape') closeModal();
+      if (e.key === 'ArrowLeft') navigateModal(-1);
+      if (e.key === 'ArrowRight') navigateModal(1);
+    }
+
+    function navigateModal(dir) {
+      const ids = getNavigablePages().map(p => p.id);
+      const idx = ids.indexOf(modalState.currentId);
+      if (idx === -1) return;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= ids.length) return; // ya está en un extremo
+      modalState.currentId = ids[newIdx];
+      renderModalTransform();
+    }
+
+    function renderModalTransform() {
+      const record = pageRegistry.find(p => p.id === modalState.currentId);
+      if (!record || !modalImage) return;
+
+      modalImage.src = record.thumb || '';
+      const sx = record.mirrorH ? -1 : 1;
+      const sy = record.mirrorV ? -1 : 1;
+      modalImage.style.transform = 'rotate(' + (record.rotation || 0) + 'deg) scale(' + sx + ',' + sy + ')';
+
+      const ids = getNavigablePages().map(p => p.id);
+      const idx = ids.indexOf(modalState.currentId);
+      if (modalPrevBtn) modalPrevBtn.disabled = (idx <= 0);
+      if (modalNextBtn) modalNextBtn.disabled = (idx === -1 || idx >= ids.length - 1);
+    }
+
+    if (modalToolsEl) {
+      modalToolsEl.innerHTML = buildCardToolsHTML();
+      modalToolsEl.querySelectorAll('.card-tool').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!modalState.currentId) return;
+          const applyAll = modalApplyAll && modalApplyAll.checked;
+          const targetIds = applyAll
+            ? getNavigablePages().map(p => p.id)
+            : [modalState.currentId];
+          applyTransform(modalState.currentId, btn.dataset.action, targetIds);
+        });
+      });
+    }
+
+    if (modalPrevBtn) modalPrevBtn.addEventListener('click', () => navigateModal(-1));
+    if (modalNextBtn) modalNextBtn.addEventListener('click', () => navigateModal(1));
+    if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
+    if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
+
+    /* ═══════════════════════════════════════════════
        CREAR TARJETA EN DOM
        ═══════════════════════════════════════════════ */
     function createCardInDOM(data) {
@@ -375,6 +463,11 @@
         }
       });
 
+      card.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.btn-delete-page') || e.target.closest('.card-tool')) return;
+        openModal(data.id);
+      });
+
       // Botón eliminar
       const btnDel = document.createElement('button');
       btnDel.className = 'btn-delete-page';
@@ -389,6 +482,11 @@
           card.remove();
         }
         syncRegistryWithDOM();
+        // Si la hoja borrada era la que se veía en el modal, se cierra sola
+        // en vez de quedar mostrando una página que ya no existe.
+        if (modalState.currentId && !pageRegistry.find(p => p.id === modalState.currentId)) {
+          closeModal();
+        }
         if (workspace.children.length === 0) {
           pdfDocumentsData.clear();
           wordDocumentsData.clear();
