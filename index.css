@@ -1,22 +1,26 @@
 /* ═══════════════════════════════════════════════
-   index.css — UNIFICADOR SEDAPAL (Fortificado v3)
+   index.css — UNIFICADOR SEDAPAL (Fortificado v4)
    ✅ Multi-Drag badge · Word badge · Failed cards
    ✅ Sortable chosen/drag · Toast · Overlay
+   ✅ Herramientas de rotación/espejo (sutiles, rojo)
+   ✅ Panel de alcance + nombre de archivo
    ✅ Responsive · Accesibilidad · Print
    ═══════════════════════════════════════════════ */
 
 :root {
   --sedapal-blue:    #00529b;
   --sedapal-dark:    #004080;
-  --sedapal-light:   #e6f0fa;
+  --sedapal-light:   #eaf3fc;
   --danger:          #fa5252;
   --danger-hover:    #e03131;
+  --danger-soft:     rgba(224, 49, 49, 0.32);
+  --danger-soft-hi:  rgba(224, 49, 49, 0.85);
   --success:         #2b8a3e;
   --warning:         #e67e22;
-  --gray-50:         #f8f9fa;
-  --gray-100:        #f1f3f5;
-  --gray-200:        #e9ecef;
-  --gray-300:        #dee2e6;
+  --gray-50:         #f9fafb;
+  --gray-100:        #f2f4f6;
+  --gray-200:        #eaecef;
+  --gray-300:        #dfe3e7;
   --gray-400:        #ced4da;
   --gray-500:        #adb5bd;
   --gray-600:        #868e96;
@@ -24,11 +28,11 @@
   --gray-800:        #343a40;
   --gray-900:        #212529;
   --white:           #ffffff;
-  --radius:          8px;
-  --radius-sm:       4px;
-  --shadow:          0 4px 20px rgba(0,0,0,0.08);
-  --shadow-lg:       0 10px 40px rgba(0,0,0,0.12);
-  --transition:      0.2s ease;
+  --radius:          10px;
+  --radius-sm:       6px;
+  --shadow:          0 2px 10px rgba(20,30,40,0.06);
+  --shadow-lg:       0 8px 30px rgba(20,30,40,0.08);
+  --transition:      0.18s ease;
 }
 
 /* ── RESET ── */
@@ -36,7 +40,7 @@
 
 body {
   font-family: 'Segoe UI', Arial, sans-serif;
-  background-color: var(--gray-200);
+  background-color: var(--gray-100);
   color: var(--gray-800);
   display: flex;
   justify-content: center;
@@ -54,13 +58,13 @@ body {
   padding: clamp(20px, 4vw, 40px);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
 }
 
 /* ── HEADER ── */
 header {
   text-align: center;
-  border-bottom: 2px solid var(--gray-100);
+  border-bottom: 1px solid var(--gray-200);
   padding-bottom: 16px;
 }
 
@@ -68,6 +72,7 @@ header h1 {
   font-size: clamp(18px, 3vw, 24px);
   color: var(--sedapal-blue);
   letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
 .subtitle {
@@ -89,13 +94,13 @@ header h1 {
 }
 
 /* ── MAIN ── */
-main { display: flex; flex-direction: column; gap: 20px; }
+main { display: flex; flex-direction: column; gap: 18px; }
 
 /* ── DROP ZONE ── */
 .drop-zone {
   width: 100%;
   min-height: 90px;
-  border: 2px dashed var(--sedapal-blue);
+  border: 1.5px dashed var(--sedapal-blue);
   border-radius: var(--radius);
   background-color: #f8fbff;
   cursor: pointer;
@@ -112,7 +117,7 @@ main { display: flex; flex-direction: column; gap: 20px; }
 .drop-zone:hover,
 .drop-zone.drag-over {
   background-color: var(--sedapal-light);
-  border-width: 3px;
+  border-width: 2px;
 }
 
 .drop-zone:focus-visible {
@@ -124,7 +129,7 @@ main { display: flex; flex-direction: column; gap: 20px; }
 .controls-panel {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(12px, 2vw, 24px);
+  gap: clamp(12px, 2vw, 22px);
   background: var(--gray-50);
   padding: 14px 20px;
   border-radius: var(--radius);
@@ -154,7 +159,8 @@ main { display: flex; flex-direction: column; gap: 20px; }
   font-size: 14px;
 }
 
-.control-item input[type="checkbox"] {
+.control-item input[type="checkbox"],
+.control-item input[type="radio"] {
   accent-color: var(--sedapal-blue);
   width: 16px;
   height: 16px;
@@ -166,12 +172,83 @@ main { display: flex; flex-direction: column; gap: 20px; }
   cursor: help;
 }
 
+/* ── PANEL: NOMBRE DE ARCHIVO ── */
+.filename-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  flex-wrap: wrap;
+}
+
+.filename-panel label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+  white-space: nowrap;
+}
+
+.filename-input-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 180px;
+  background: var(--white);
+  border: 1px solid var(--gray-400);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.filename-input-wrap input {
+  border: none;
+  padding: 8px 10px;
+  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+}
+
+.filename-input-wrap input:focus {
+  box-shadow: inset 0 0 0 2px var(--sedapal-light);
+}
+
+.filename-ext {
+  padding: 8px 10px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 13px;
+  font-weight: 600;
+  border-left: 1px solid var(--gray-300);
+}
+
+/* ── PANEL: ALCANCE DE TRANSFORMACIÓN ── */
+.scope-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+}
+
+.scope-panel .scope-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sedapal-blue);
+  white-space: nowrap;
+}
+
 /* ── WORKSPACE ── */
 .workspace {
   width: 100%;
   min-height: 350px;
   max-height: 65vh;
-  background: #fafbfc;
+  background: var(--gray-50);
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   padding: 16px;
@@ -192,7 +269,6 @@ main { display: flex; flex-direction: column; gap: 20px; }
   text-align: center;
 }
 
-/* Scrollbar estilizada */
 .workspace::-webkit-scrollbar { width: 8px; }
 .workspace::-webkit-scrollbar-track { background: var(--gray-100); border-radius: 4px; }
 .workspace::-webkit-scrollbar-thumb { background: var(--gray-400); border-radius: 4px; }
@@ -201,7 +277,7 @@ main { display: flex; flex-direction: column; gap: 20px; }
 /* ── PAGE CARD ── */
 .page-card {
   width: 130px;
-  height: 185px;
+  height: 195px;
   border: 1px solid var(--gray-300);
   background: var(--white);
   position: relative;
@@ -209,10 +285,10 @@ main { display: flex; flex-direction: column; gap: 20px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow);
   border-radius: var(--radius-sm);
   user-select: none;
-  overflow: hidden;
+  overflow: visible;
   transition: transform 0.1s, border-color var(--transition), box-shadow var(--transition);
 }
 
@@ -223,32 +299,26 @@ main { display: flex; flex-direction: column; gap: 20px; }
 
 .page-card:active { cursor: grabbing; }
 
-/* Seleccionada */
 .page-card.selected {
-  border: 3px solid var(--sedapal-blue);
+  border: 2px solid var(--sedapal-blue);
   background-color: var(--sedapal-light);
-  box-shadow: 0 4px 12px rgba(0,82,155,0.25);
+  box-shadow: 0 4px 14px rgba(0,82,155,0.18);
 }
 
-/* Sortable ghost */
 .page-card.sortable-ghost {
   opacity: 0.3;
   background-color: var(--gray-200);
 }
 
-/* Sortable chosen (arrastrando actual) */
 .page-card.sortable-chosen {
-  box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.16);
   z-index: 100;
 }
 
-/* Sortable drag (clon que sigue al cursor) */
 .page-card.sortable-drag {
   opacity: 0.7;
-  transform: rotate(2deg);
 }
 
-/* Página fallida */
 .page-card.page-failed {
   border: 2px dashed var(--danger);
   background-color: #fff5f5;
@@ -260,9 +330,18 @@ main { display: flex; flex-direction: column; gap: 20px; }
 .failed-icon { font-size: 28px; }
 .failed-text { font-size: 10px; color: var(--danger); text-align: center; }
 
-/* Tarjeta de Word */
 .page-card.word-page {
-  border-left: 4px solid #2b579a;
+  border-left: 3px solid #2b579a;
+}
+
+/* Contenedor recortado de la miniatura (para que la imagen no se salga al rotar/espejar) */
+.page-image-frame {
+  width: 100%;
+  height: 165px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 /* ── BADGES ── */
@@ -322,7 +401,7 @@ main { display: flex; flex-direction: column; gap: 20px; }
   font-size: 10px;
   cursor: pointer;
   font-weight: bold;
-  z-index: 10;
+  z-index: 11;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -331,6 +410,74 @@ main { display: flex; flex-direction: column; gap: 20px; }
 
 .btn-delete-page:hover {
   background: var(--danger-hover);
+}
+
+/* ── HERRAMIENTAS DE ROTACIÓN / ESPEJO (sutiles, rojo casi transparente) ── */
+.card-tools {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  transform: translateY(100%);
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 6px;
+  z-index: 15;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+.page-card:hover .card-tools,
+.page-card:focus-within .card-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card-tool {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--danger-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), transform var(--transition);
+}
+
+.card-tool svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.card-tool:hover,
+.card-tool:focus-visible {
+  color: var(--danger-soft-hi);
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  transform: scale(1.08);
+  outline: none;
+}
+
+/* Indicador discreto de transformación activa (esquina superior derecha, chiquito) */
+.transform-indicator {
+  position: absolute;
+  top: 4px;
+  right: 30px;
+  font-size: 9px;
+  color: var(--danger-soft-hi);
+  background: rgba(255,255,255,0.85);
+  padding: 1px 4px;
+  border-radius: 3px;
+  z-index: 10;
+  pointer-events: none;
+  font-weight: 700;
 }
 
 /* ── BOTÓN PRIMARIO ── */
@@ -372,7 +519,7 @@ main { display: flex; flex-direction: column; gap: 20px; }
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.95);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -490,13 +637,17 @@ footer {
 @media (max-width: 768px) {
   .page-card {
     width: 105px;
-    height: 150px;
+    height: 165px;
   }
-  .controls-panel {
+  .page-image-frame { height: 135px; }
+  .controls-panel,
+  .filename-panel,
+  .scope-panel {
     flex-direction: column;
     gap: 10px;
     align-items: flex-start;
   }
+  .filename-input-wrap { width: 100%; }
   .btn-primary {
     width: 100%;
     justify-content: center;
@@ -512,8 +663,9 @@ footer {
 @media (max-width: 480px) {
   .page-card {
     width: 90px;
-    height: 130px;
+    height: 145px;
   }
+  .page-image-frame { height: 118px; }
   .drop-zone {
     min-height: 70px;
     font-size: 13px;
@@ -541,5 +693,6 @@ footer {
   .toast-container,
   .cdn-error-banner,
   .btn-delete-page,
+  .card-tools,
   footer { display: none !important; }
 }
