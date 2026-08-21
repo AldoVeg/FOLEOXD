@@ -52,7 +52,6 @@
     const chkFoleo             = document.getElementById('chk-foleo');
     const chkFoleoInv         = document.getElementById('chk-foleo-inverso');
     const folioStart           = document.getElementById('folio-start');
-    const chkOptimize         = document.getElementById('chk-optimize');
     const outputFilenameInput = document.getElementById('output-filename');
 
     /* ── Estado interno ── */
@@ -235,25 +234,23 @@
        ═══════════════════════════════════════════════ */
 
     function getTransformScope() {
-      const el = document.querySelector('input[name="transform-scope"]:checked');
-      return el ? el.value : 'this';
+      const allChk = document.getElementById('chk-scope-all');
+      if (allChk && allChk.checked) return 'all';
+      const selectedCount = document.querySelectorAll('.page-card.selected').length;
+      return selectedCount > 1 ? 'selected' : 'this';
     }
 
     function resolveTargetIds(clickedId) {
       const scope = getTransformScope();
       if (scope === 'all') {
+        // "Todas" autoselecciona visualmente todo el workspace, como pediste.
+        document.querySelectorAll('.page-card').forEach(c => c.classList.add('selected'));
         return pageRegistry.filter(p => !p.isFailed).map(p => p.id);
       }
       if (scope === 'selected') {
         const ids = Array.from(document.querySelectorAll('.page-card.selected'))
           .map(c => c.dataset.id);
-        // Si no hay nada seleccionado, se cae de vuelta a "esta hoja" para
-        // que el clic nunca se pierda sin efecto ni aviso.
-        if (ids.length === 0) {
-          showToast('No hay hojas seleccionadas. Se aplicó solo a esta hoja.', 'warning');
-          return [clickedId];
-        }
-        return ids;
+        return ids.length > 0 ? ids : [clickedId];
       }
       return [clickedId];
     }
@@ -786,12 +783,16 @@
       const finalX = rotateOffset.x + rotatedMirrorOffset.x;
       const finalY = rotateOffset.y + rotatedMirrorOffset.y;
 
+      // FIX (confirmado por prueba geométrica): pdf-lib rota en sentido
+      // ANTIHORARIO para valores positivos (documentación oficial de pdf-lib).
+      // Mis fórmulas de posición fueron derivadas para rotación física
+      // HORARIA, así que se compensa invirtiendo el signo del ángulo.
       drawFn({
         x: finalX,
         y: finalY,
         width: mirrorH ? -contentW : contentW,
         height: mirrorV ? -contentH : contentH,
-        rotate: PDFLib.degrees(rot)
+        rotate: PDFLib.degrees(-rot)
       });
     }
 
@@ -804,7 +805,6 @@
       isGenerating = true;
       const applyFoleo    = chkFoleo && chkFoleo.checked;
       const applyFoleoInv = chkFoleoInv && chkFoleoInv.checked;
-      const optimize       = chkOptimize && chkOptimize.checked;
       let folioNum         = parseInt((folioStart && folioStart.value) || 1) || 1;
 
       showLoader('Compilando documento final...', true);
@@ -944,8 +944,10 @@
           }
         }
 
-        const saveOptions = optimize ? { useObjectStreams: true } : {};
-        const finalBytes = await finalPdf.save(saveOptions);
+        // La compresión estructural (useObjectStreams) siempre queda activa:
+        // no hay ningún caso real en que convenga desactivarla, así que ya
+        // no se le pregunta al usuario (Fix: checkbox "Optimizar Peso" eliminado).
+        const finalBytes = await finalPdf.save({ useObjectStreams: true });
 
         const blob = new Blob([finalBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
