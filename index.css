@@ -1,16 +1,25 @@
 /* ═══════════════════════════════════════════════
-   index.css — UNIFICADOR SEDAPAL (Fortificado v4)
-   ✅ Multi-Drag badge · Word badge · Failed cards
+   index.css — UNIFICADOR SEDAPAL (Fortificado v8 — rediseño)
+   ✅ Identidad visual renovada (gradiente azul-cian, radios grandes)
+   ✅ Multi-Drag badge · Word badge · Image badge · Failed cards
    ✅ Sortable chosen/drag · Toast · Overlay
    ✅ Herramientas de rotación/espejo (sutiles, rojo)
-   ✅ Panel de alcance + nombre de archivo
+   ✅ Zoom con doble clic en el modal (cursor zoom/grab + hint)
+   ✅ Panel de alcance + nombre de archivo + total de hojas en foleo
    ✅ Responsive · Accesibilidad · Print
    ═══════════════════════════════════════════════ */
 
 :root {
-  --sedapal-blue:    #00529b;
-  --sedapal-dark:    #004080;
-  --sedapal-light:   #eaf3fc;
+  --sedapal-blue:    #0c5aa6;
+  --sedapal-dark:    #063d75;
+  --sedapal-light:   #e8f3fd;
+  --accent:          #00a8cc;
+  --accent-dark:     #007c99;
+  --accent-glow:     rgba(0, 168, 204, 0.35);
+  --gradient-brand:  linear-gradient(135deg, var(--sedapal-blue) 0%, var(--accent) 100%);
+  --gradient-bg:     radial-gradient(circle at 15% -10%, #eaf6fd 0%, transparent 55%),
+                      radial-gradient(circle at 100% 0%, #eef2fb 0%, transparent 45%),
+                      var(--gray-100);
   --danger:          #fa5252;
   --danger-hover:    #e03131;
   --danger-soft:     rgba(224, 49, 49, 0.32);
@@ -18,67 +27,113 @@
   --success:         #2b8a3e;
   --warning:         #e67e22;
   --gray-50:         #f9fafb;
-  --gray-100:        #f2f4f6;
-  --gray-200:        #eaecef;
-  --gray-300:        #dfe3e7;
-  --gray-400:        #ced4da;
-  --gray-500:        #adb5bd;
-  --gray-600:        #868e96;
-  --gray-700:        #495057;
-  --gray-800:        #343a40;
-  --gray-900:        #212529;
+  --gray-100:        #f1f4f8;
+  --gray-200:        #e7ebf1;
+  --gray-300:        #dbe1e9;
+  --gray-400:        #c4ccd6;
+  --gray-500:        #9aa5b1;
+  --gray-600:        #6b7684;
+  --gray-700:        #47505c;
+  --gray-800:        #2b323c;
+  --gray-900:        #171b21;
   --white:           #ffffff;
-  --radius:          10px;
-  --radius-sm:       6px;
-  --shadow:          0 2px 10px rgba(20,30,40,0.06);
-  --shadow-lg:       0 8px 30px rgba(20,30,40,0.08);
-  --transition:      0.18s ease;
+  --radius:          16px;
+  --radius-lg:       22px;
+  --radius-sm:       10px;
+  --shadow:          0 2px 12px rgba(12, 40, 70, 0.07);
+  --shadow-lg:       0 18px 46px rgba(12, 40, 70, 0.14);
+  --shadow-brand:    0 10px 26px var(--accent-glow);
+  --transition:      0.18s cubic-bezier(.4,0,.2,1);
 }
 
 /* ── RESET ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Segoe UI', Arial, sans-serif;
-  background-color: var(--gray-100);
+  font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+  background: var(--gradient-bg);
   color: var(--gray-800);
   display: flex;
   justify-content: center;
-  padding: clamp(16px, 4vw, 40px) clamp(12px, 3vw, 20px);
+  padding: clamp(16px, 4vw, 48px) clamp(12px, 3vw, 20px);
   min-height: 100vh;
 }
 
 /* ── PORTAL ── */
 .portal-container {
   background-color: var(--white);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 1100px;
-  padding: clamp(20px, 4vw, 40px);
+  max-width: 1120px;
+  padding: 0 0 clamp(20px, 4vw, 36px);
   display: flex;
   flex-direction: column;
   gap: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(12, 40, 70, 0.05);
 }
 
-/* ── HEADER ── */
-header {
+/* ── HEADER ──
+   Fix (bug confirmado: "encabezado celeste" apareciendo sin pedirlo en
+   hojas Word, y márgenes alterados): estas reglas usaban el selector de
+   ELEMENTO "header" a secas, sin ninguna clase — un selector así aplica a
+   CUALQUIER <header> de todo el documento, sin importar dónde esté. Cuando
+   se generan las hojas Word (docx-preview usa un <header> real, semántico,
+   para el encabezado propio del documento Word), este CSS —pensado solo
+   para la barra superior de esta app— se colaba encima y le imponía su
+   propio degradé celeste, su padding y su centrado, tapando/deformando el
+   encabezado real del Word. Se escapa el selector a ".portal-container >
+   header" para que SOLO afecte a la barra superior de la app. */
+.portal-container > header {
   text-align: center;
-  border-bottom: 1px solid var(--gray-200);
-  padding-bottom: 16px;
+  padding: clamp(28px, 5vw, 40px) clamp(20px, 4vw, 40px) 30px;
+  background: var(--gradient-brand);
+  color: var(--white);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
-header h1 {
-  font-size: clamp(18px, 3vw, 24px);
-  color: var(--sedapal-blue);
-  letter-spacing: 0.5px;
-  font-weight: 600;
+.portal-container > header::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 28px;
+  background: var(--white);
+  border-radius: 60% 60% 0 0 / 100% 100% 0 0;
+}
+
+.brand-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--white);
+  margin-bottom: 4px;
+  backdrop-filter: blur(2px);
+}
+
+.portal-container > header h1 {
+  font-size: clamp(19px, 3vw, 26px);
+  letter-spacing: 0.6px;
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
 }
 
 .subtitle {
-  font-size: 13px;
-  color: var(--gray-600);
-  margin-top: 4px;
+  font-size: 13.5px;
+  color: rgba(255,255,255,0.88);
+  margin-top: 2px;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── BANNER CDN ERROR ── */
@@ -91,38 +146,53 @@ header h1 {
   font-weight: 600;
   font-size: 14px;
   text-align: center;
+  margin: 0 clamp(20px, 4vw, 36px);
 }
 
 /* ── MAIN ── */
-main { display: flex; flex-direction: column; gap: 18px; }
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 clamp(20px, 4vw, 36px);
+}
 
 /* ── DROP ZONE ── */
 .drop-zone {
   width: 100%;
-  min-height: 90px;
-  border: 1.5px dashed var(--sedapal-blue);
+  min-height: 110px;
+  border: 2px dashed var(--sedapal-blue);
   border-radius: var(--radius);
-  background-color: #f8fbff;
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f8ff 100%);
   cursor: pointer;
   transition: all var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   color: var(--sedapal-blue);
-  font-size: 14px;
+  font-size: 14.5px;
   user-select: none;
 }
 
+.drop-zone svg { transition: transform var(--transition); }
+
 .drop-zone:hover,
 .drop-zone.drag-over {
-  background-color: var(--sedapal-light);
-  border-width: 2px;
+  background: var(--sedapal-light);
+  border-color: var(--accent);
+  border-width: 2.5px;
+  box-shadow: var(--shadow-brand);
+}
+
+.drop-zone:hover svg,
+.drop-zone.drag-over svg {
+  transform: translateY(-3px);
 }
 
 .drop-zone:focus-visible {
-  outline: 3px solid var(--sedapal-blue);
-  outline-offset: 2px;
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 }
 
 /* ── CONTROLS PANEL ── */
@@ -131,7 +201,7 @@ main { display: flex; flex-direction: column; gap: 18px; }
   flex-wrap: wrap;
   gap: clamp(12px, 2vw, 22px);
   background: var(--gray-50);
-  padding: 14px 20px;
+  padding: 14px 22px;
   border-radius: var(--radius);
   border: 1px solid var(--gray-200);
   justify-content: center;
@@ -157,6 +227,12 @@ main { display: flex; flex-direction: column; gap: 18px; }
   text-align: center;
   font-weight: bold;
   font-size: 14px;
+}
+
+.control-item input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .control-item input[type="checkbox"],
@@ -200,6 +276,12 @@ main { display: flex; flex-direction: column; gap: 18px; }
   border: 1px solid var(--gray-400);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.filename-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .filename-input-wrap input {
@@ -209,10 +291,6 @@ main { display: flex; flex-direction: column; gap: 18px; }
   flex: 1;
   min-width: 0;
   outline: none;
-}
-
-.filename-input-wrap input:focus {
-  box-shadow: inset 0 0 0 2px var(--sedapal-light);
 }
 
 .filename-ext {
@@ -228,6 +306,32 @@ main { display: flex; flex-direction: column; gap: 18px; }
    tarjetas de cada fila — a menos columnas, cada tarjeta crece) ── */
 .workspace-wrap {
   position: relative;
+}
+
+/* Cuadro flotante del total de páginas — visible unos segundos cada vez
+   que cambia (cargar/eliminar hojas), luego se desvanece solo. */
+.page-count-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--gradient-brand);
+  color: white;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-brand);
+  z-index: 15;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  white-space: nowrap;
+}
+
+.page-count-badge.show {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .workspace {
@@ -276,20 +380,25 @@ main { display: flex; flex-direction: column; gap: 18px; }
   border-radius: var(--radius-sm);
   user-select: none;
   overflow: visible;
-  transition: transform 0.1s, border-color var(--transition), box-shadow var(--transition);
+  transition: transform 0.14s ease, border-color var(--transition), box-shadow var(--transition);
+}
+
+.page-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
 }
 
 .page-card:focus-visible {
-  outline: 3px solid var(--sedapal-blue);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
 .page-card:active { cursor: grabbing; }
 
 .page-card.selected {
-  border: 2px solid var(--sedapal-blue);
+  border: 2px solid var(--accent);
   background-color: var(--sedapal-light);
-  box-shadow: 0 4px 14px rgba(0,82,155,0.18);
+  box-shadow: 0 6px 18px var(--accent-glow);
 }
 
 .page-card.sortable-ghost {
@@ -298,7 +407,7 @@ main { display: flex; flex-direction: column; gap: 18px; }
 }
 
 .page-card.sortable-chosen {
-  box-shadow: 0 8px 22px rgba(0,0,0,0.16);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.18);
   z-index: 100;
 }
 
@@ -321,6 +430,112 @@ main { display: flex; flex-direction: column; gap: 18px; }
   border-left: 3px solid #2b579a;
 }
 
+.page-card.image-page {
+  border-left: 3px solid #2b8a3e;
+}
+
+.page-card.pdf-page {
+  border-left: 3px solid #c0392b;
+}
+
+/* ── BLOQUE (archivo completo como una sola unidad) ──
+   Un .page-group ocupa toda la fila del grid del workspace: por dentro es
+   su propia franja horizontal con las hojas del archivo en miniatura, más
+   pequeñas que las tarjetas normales. Sortable solo ve el wrapper como
+   hijo directo del workspace, así que arrastrar/eliminar mueve/borra el
+   bloque entero de una — las hojas de adentro dejan de ser reordenables/
+   eliminables una por una mientras estén agrupadas (ver .in-group). */
+.page-group {
+  grid-column: 1 / -1;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  background: var(--sedapal-light);
+  box-shadow: var(--shadow);
+  cursor: grab;
+  overflow: hidden;
+}
+
+.page-group:active { cursor: grabbing; }
+
+.page-group.sortable-ghost { opacity: 0.3; background-color: var(--gray-200); }
+.page-group.sortable-chosen { box-shadow: 0 10px 26px rgba(0,0,0,0.18); z-index: 100; }
+.page-group.sortable-drag { opacity: 0.7; }
+
+.page-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.6);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.page-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-group-actions .card-tools {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  background: none;
+  padding: 0;
+  gap: 4px;
+}
+
+.btn-ungroup {
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--gray-700);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-ungroup:hover {
+  background: var(--sedapal-light);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.page-group-strip {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.page-group-strip .page-card {
+  flex: 0 0 68px;
+  width: 68px;
+}
+
+/* Mientras una hoja está agrupada, sus propios controles individuales
+   quedan ocultos — la acción se hace a nivel de bloque (ver header). */
+.page-card.in-group {
+  cursor: pointer;
+}
+.page-card.in-group .btn-delete-page,
+.page-card.in-group .card-tools {
+  display: none;
+}
+
 /* Contenedor recortado de la miniatura (para que la imagen no se salga al rotar/espejar) */
 /* La miniatura ahora ocupa toda la tarjeta (las flechas son overlay
    flotante, ya no reservan su propia franja de espacio) */
@@ -331,6 +546,7 @@ main { display: flex; flex-direction: column; gap: 18px; }
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 /* ── BADGES ── */
@@ -338,7 +554,7 @@ main { display: flex; flex-direction: column; gap: 18px; }
   position: absolute;
   bottom: 6px;
   right: 6px;
-  background: var(--sedapal-blue);
+  background: var(--gradient-brand);
   color: white;
   font-size: 11px;
   font-weight: bold;
@@ -354,6 +570,34 @@ main { display: flex; flex-direction: column; gap: 18px; }
   top: 5px;
   left: 5px;
   background: #2b579a;
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  z-index: 10;
+  letter-spacing: 0.5px;
+}
+
+.image-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: #2b8a3e;
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  z-index: 10;
+  letter-spacing: 0.5px;
+}
+
+.pdf-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: #c0392b;
   color: white;
   font-size: 9px;
   font-weight: bold;
@@ -394,11 +638,12 @@ main { display: flex; flex-direction: column; gap: 18px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition);
+  transition: background var(--transition), transform var(--transition);
 }
 
 .btn-delete-page:hover {
   background: var(--danger-hover);
+  transform: scale(1.1);
 }
 
 /* ── HERRAMIENTAS DE ROTACIÓN / ESPEJO ──
@@ -471,24 +716,26 @@ main { display: flex; flex-direction: column; gap: 18px; }
 
 /* ── BOTÓN PRIMARIO ── */
 .btn-primary {
-  background-color: var(--sedapal-blue);
+  background: var(--gradient-brand);
   color: white;
-  padding: 14px 36px;
+  padding: 15px 40px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   font-size: 16px;
   font-weight: bold;
   cursor: pointer;
   align-self: center;
-  transition: background-color var(--transition), transform 0.1s;
+  transition: box-shadow var(--transition), transform 0.12s;
   display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow: var(--shadow-brand);
+  letter-spacing: 0.3px;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--sedapal-dark);
-  transform: translateY(-1px);
+  box-shadow: 0 14px 32px var(--accent-glow);
+  transform: translateY(-2px);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -496,7 +743,8 @@ main { display: flex; flex-direction: column; gap: 18px; }
 }
 
 .btn-primary:disabled {
-  background-color: var(--gray-500);
+  background: var(--gray-400);
+  box-shadow: none;
   cursor: not-allowed;
   transform: none;
 }
@@ -522,7 +770,7 @@ main { display: flex; flex-direction: column; gap: 18px; }
 /* ── LOADER ── */
 .loader {
   border: 5px solid var(--gray-200);
-  border-top: 5px solid var(--sedapal-blue);
+  border-top: 5px solid var(--accent);
   border-radius: 50%;
   width: 48px;
   height: 48px;
@@ -546,13 +794,13 @@ progress {
 
 progress::-webkit-progress-bar { background: var(--gray-200); border-radius: 5px; }
 progress::-webkit-progress-value {
-  background: linear-gradient(90deg, var(--sedapal-blue), #0077cc);
+  background: var(--gradient-brand);
   border-radius: 5px;
   transition: width 0.3s ease;
 }
 
 progress::-moz-progress-bar {
-  background: linear-gradient(90deg, var(--sedapal-blue), #0077cc);
+  background: var(--gradient-brand);
   border-radius: 5px;
 }
 
@@ -653,17 +901,39 @@ progress::-moz-progress-bar {
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--transition), border-color var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
 .btn-force:hover {
   background: var(--sedapal-light);
-  border-color: var(--sedapal-blue);
-  color: var(--sedapal-blue);
+  border-color: var(--accent);
+  color: var(--accent-dark);
 }
 
-/* ── FOOTER ── */
-footer {
+.btn-force:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-force:disabled:hover {
+  background: var(--white);
+  border-color: var(--gray-300);
+  color: var(--gray-700);
+}
+
+/* ── DESHACER / REHACER ── */
+.undo-redo-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 6px 2px 0;
+}
+
+/* ── FOOTER ──
+   Mismo fix que el header de arriba: escapado a ".portal-container >
+   footer" para no imponerle su propio centrado/color/tamaño/margen al
+   <footer> real de una hoja Word (docx-preview también usa un <footer>
+   semántico para el pie de página propio del documento). */
+.portal-container > footer {
   text-align: center;
   color: var(--gray-500);
   font-size: 12px;
@@ -685,14 +955,15 @@ footer {
 .page-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(20, 25, 30, 0.72);
+  background: rgba(10, 18, 28, 0.75);
+  backdrop-filter: blur(2px);
 }
 
 .page-modal-content {
   position: relative;
   z-index: 1;
   background: var(--white);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 20px;
   width: min(720px, 94vw);
@@ -701,6 +972,89 @@ footer {
   flex-direction: column;
   align-items: center;
   gap: 14px;
+}
+
+/* ── MODAL: rango de páginas (PDF grande) ── */
+.range-modal-content {
+  position: relative;
+  z-index: 1;
+  background: var(--white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+  width: min(520px, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.range-modal-content h3 {
+  font-size: 17px;
+  color: var(--gray-800);
+}
+
+.range-modal-filename {
+  font-size: 13px;
+  color: var(--gray-600);
+  word-break: break-all;
+  margin-top: -8px;
+}
+
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.range-inputs input[type="number"] {
+  width: 70px;
+  margin-left: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.range-count-label {
+  font-weight: 400;
+  color: var(--gray-500);
+}
+
+.range-preview {
+  display: flex;
+  gap: 12px;
+}
+
+.range-preview-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.range-preview-item img {
+  width: 100%;
+  aspect-ratio: 1 / 1.4142;
+  object-fit: contain;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+}
+
+.range-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 /* Marco con proporción real de hoja A4 (1 : 1.4142) — la imagen se ve
@@ -717,7 +1071,32 @@ footer {
   justify-content: center;
   background: var(--gray-50);
   border-radius: var(--radius-sm);
+  overflow: hidden; /* recorta la imagen cuando está en zoom, para que no se salga del marco */
 }
+
+.modal-image.zoomable { cursor: zoom-in; }
+.modal-image.zoomed { cursor: grab; }
+.modal-image.zoomed.dragging { cursor: grabbing; }
+
+.modal-zoom-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20,25,30,0.65);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.modal-image-wrap:hover .modal-zoom-hint { opacity: 1; }
 
 .modal-loader {
   position: absolute;
@@ -764,6 +1143,7 @@ footer {
   font-size: 14px;
   cursor: pointer;
   z-index: 2;
+  transition: background var(--transition);
 }
 
 .modal-close:hover { background: var(--gray-200); }
@@ -789,8 +1169,10 @@ footer {
   align-items: center;
   justify-content: center;
   z-index: 2;
+  transition: transform var(--transition);
 }
 
+.modal-nav:hover:not(:disabled) { transform: translateY(-50%) scale(1.08); }
 .modal-nav:disabled { opacity: 0.3; cursor: not-allowed; }
 .modal-prev { left: -14px; }
 .modal-next { right: -14px; }
@@ -857,7 +1239,7 @@ footer {
 @media (max-width: 480px) {
   .workspace { grid-template-columns: repeat(2, 1fr); }
   .drop-zone {
-    min-height: 70px;
+    min-height: 80px;
     font-size: 13px;
     flex-direction: column;
     gap: 6px;

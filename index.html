@@ -29,9 +29,19 @@
     <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
             onerror="console.warn('SortableJS no disponible — solo drag nativo.')"></script>
 
-    <!-- CDN: mammoth.js (conversión Word → HTML) -->
-    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"
-            onerror="console.warn('mammoth.js no disponible — sin soporte Word.')"></script>
+    <!-- CDN: jszip (dependencia de docx-preview para leer el .docx como zip) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+            onerror="console.warn('jszip no disponible — sin soporte Word.')"></script>
+
+    <!-- CDN: docx-preview (lectura fiel de Word). Reemplaza a mammoth.js:
+         mammoth convierte a HTML "limpio" y por diseño DESCARTA alineación,
+         color y tamaño de fuente puestos a mano si no vienen de un estilo
+         con nombre (ver CAMBIOS.md, Ronda 7) — esa es la causa raíz del
+         reclamo recurrente de "se altera el formato/data de Word". docx-preview
+         en cambio lee el XML del .docx igual que lo hace Word al abrirlo y
+         aplica cada propiedad tal cual está en el archivo, manual o no. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/docx-preview@0.4.0/dist/docx-preview.min.js"
+            onerror="console.warn('docx-preview no disponible — sin soporte Word.')"></script>
 
     <!-- CDN: html2canvas (captura de páginas Word → imagen) -->
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
@@ -41,8 +51,13 @@
 
     <div class="portal-container" role="main" aria-label="Unificador SEDAPAL">
         <header>
+            <div class="brand-badge" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <path d="M12 2.5c3.6 4.4 6.5 8.4 6.5 11.9a6.5 6.5 0 1 1-13 0c0-3.5 2.9-7.5 6.5-11.9Z" stroke-linejoin="round"/>
+                </svg>
+            </div>
             <h1>UNIFICADOR SEDAPAL</h1>
-            <p class="subtitle">Arrastra PDFs y DOCX, organízalos y genera un PDF unificado</p>
+            <p class="subtitle">Arrastra PDF, Word e imágenes (PNG/JPG), organízalos y genera un PDF unificado</p>
         </header>
 
         <main>
@@ -51,13 +66,15 @@
 
             <!-- Zona de carga -->
             <div id="drop-zone" class="drop-zone" tabindex="0" role="button"
-                 aria-label="Zona de carga de archivos. Haz clic o arrastra PDFs y DOCX aquí.">
+                 aria-label="Zona de carga de archivos. Haz clic o arrastra PDF, Word o imágenes PNG/JPG aquí.">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00529b" stroke-width="1.5" aria-hidden="true">
                     <path d="M12 16V4m0 0L8 8m4-4l4 4M4 20h16"/>
                 </svg>
-                <span>Haz clic o arrastra aquí tus <strong>PDFs</strong> y <strong>DOCX</strong></span>
+                <span>Haz clic o arrastra aquí tus <strong>PDF</strong>, <strong>Word</strong> e <strong>imágenes</strong></span>
             </div>
-            <input type="file" id="file-input" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;" />
+            <input type="file" id="file-input" multiple
+                   accept=".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif"
+                   style="display:none;" />
 
             <!-- Panel de controles: foleo -->
             <fieldset class="controls-panel">
@@ -90,10 +107,20 @@
                 </div>
             </div>
 
+            <!-- Deshacer / rehacer: reordenar, eliminar, rotar y espejar -->
+            <div class="undo-redo-bar">
+                <button type="button" id="btn-undo" class="btn-force" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>↶ Deshacer</button>
+                <button type="button" id="btn-redo" class="btn-force" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>↷ Rehacer</button>
+            </div>
+
             <!-- Workspace (tarjetas de páginas) -->
             <div class="workspace-wrap">
                 <div id="workspace" class="workspace" aria-label="Área de trabajo. Organiza las páginas arrastrándolas."
                      aria-live="polite" role="list"></div>
+
+                <!-- Cuadro flotante: aparece unos segundos cada vez que cambia el
+                     total de páginas (al cargar o eliminar), luego se desvanece. -->
+                <div id="page-count-badge" class="page-count-badge" aria-live="polite"></div>
 
                 <!-- Barra flotante: solo aparece con selección activa (o "Todas" marcado) -->
                 <div id="selection-bar" class="selection-bar hidden">
@@ -133,6 +160,34 @@
     <!-- Contenedor de toasts -->
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+    <!-- Modal: elegir rango de páginas al adjuntar un PDF grande -->
+    <div id="range-modal" class="page-modal hidden" role="dialog" aria-modal="true" aria-label="Elegir rango de páginas">
+        <div id="range-modal-backdrop" class="page-modal-backdrop"></div>
+        <div class="range-modal-content">
+            <h3>Este PDF tiene muchas páginas</h3>
+            <p id="range-modal-filename" class="range-modal-filename"></p>
+            <div class="range-inputs">
+                <label>Desde <input type="number" id="range-from" min="1" value="1" /></label>
+                <label>Hasta <input type="number" id="range-to" min="1" /></label>
+                <span id="range-count-label" class="range-count-label"></span>
+            </div>
+            <div class="range-preview">
+                <div class="range-preview-item">
+                    <span>Primera del rango</span>
+                    <img id="range-preview-from" alt="Vista previa de la primera página del rango elegido" />
+                </div>
+                <div class="range-preview-item">
+                    <span>Última del rango</span>
+                    <img id="range-preview-to" alt="Vista previa de la última página del rango elegido" />
+                </div>
+            </div>
+            <div class="range-modal-actions">
+                <button type="button" id="btn-range-all" class="btn-force">Cargar TODAS (<span id="range-total-count"></span>)</button>
+                <button type="button" id="btn-range-apply" class="btn-primary">Cargar solo este rango</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: vista ampliada de una página (doble clic en una tarjeta) -->
     <div id="page-modal" class="page-modal hidden" role="dialog" aria-modal="true" aria-label="Vista ampliada de la página">
         <div id="modal-backdrop" class="page-modal-backdrop"></div>
@@ -140,9 +195,10 @@
             <button id="modal-close" class="modal-close" aria-label="Cerrar vista ampliada">✖</button>
             <div id="modal-image-wrap" class="modal-image-wrap">
                 <button id="modal-prev" class="modal-nav modal-prev" aria-label="Página anterior">‹</button>
-                <img id="modal-image" class="modal-image" alt="Vista ampliada de la página" />
+                <img id="modal-image" class="modal-image" alt="Vista ampliada de la página. Doble clic para hacer zoom." />
                 <button id="modal-next" class="modal-nav modal-next" aria-label="Página siguiente">›</button>
                 <div id="modal-loader" class="modal-loader hidden" aria-hidden="true"><div class="loader"></div></div>
+                <span class="modal-zoom-hint" aria-hidden="true">🔍 Doble clic para zoom · arrastra o desplaza (scroll) para moverte</span>
             </div>
             <div class="modal-toolbar">
                 <div id="modal-tools" class="modal-tools" role="group" aria-label="Rotar y espejar página ampliada"></div>
