@@ -1,49 +1,50 @@
 /* ═══════════════════════════════════════════════
-   index.css — UNIFICADOR SEDAPAL (Fortificado v8 — rediseño)
-   ✅ Identidad visual renovada (gradiente azul-cian, radios grandes)
-   ✅ Multi-Drag badge · Word badge · Image badge · Failed cards
+   index.css — UNIFICADOR SEDAPAL (Ligero v10 — rediseño plano)
+   ✅ Identidad renovada: paleta neutra + un solo acento, sin
+      degradados/sombras pesadas — más rápido de pintar, más limpio
+   ✅ Multi-Drag badge · Failed cards
    ✅ Sortable chosen/drag · Toast · Overlay
-   ✅ Herramientas de rotación/espejo (sutiles, rojo)
+   ✅ Herramientas de rotación (sutiles)
    ✅ Zoom con doble clic en el modal (cursor zoom/grab + hint)
    ✅ Panel de alcance + nombre de archivo + total de hojas en foleo
    ✅ Responsive · Accesibilidad · Print
    ═══════════════════════════════════════════════ */
 
 :root {
-  --sedapal-blue:    #0c5aa6;
-  --sedapal-dark:    #063d75;
-  --sedapal-light:   #e8f3fd;
-  --accent:          #00a8cc;
-  --accent-dark:     #007c99;
-  --accent-glow:     rgba(0, 168, 204, 0.35);
-  --gradient-brand:  linear-gradient(135deg, var(--sedapal-blue) 0%, var(--accent) 100%);
-  --gradient-bg:     radial-gradient(circle at 15% -10%, #eaf6fd 0%, transparent 55%),
-                      radial-gradient(circle at 100% 0%, #eef2fb 0%, transparent 45%),
-                      var(--gray-100);
-  --danger:          #fa5252;
-  --danger-hover:    #e03131;
-  --danger-soft:     rgba(224, 49, 49, 0.32);
-  --danger-soft-hi:  rgba(224, 49, 49, 0.85);
-  --success:         #2b8a3e;
-  --warning:         #e67e22;
-  --gray-50:         #f9fafb;
-  --gray-100:        #f1f4f8;
-  --gray-200:        #e7ebf1;
-  --gray-300:        #dbe1e9;
-  --gray-400:        #c4ccd6;
-  --gray-500:        #9aa5b1;
-  --gray-600:        #6b7684;
-  --gray-700:        #47505c;
-  --gray-800:        #2b323c;
-  --gray-900:        #171b21;
-  --white:           #ffffff;
-  --radius:          16px;
-  --radius-lg:       22px;
-  --radius-sm:       10px;
-  --shadow:          0 2px 12px rgba(12, 40, 70, 0.07);
-  --shadow-lg:       0 18px 46px rgba(12, 40, 70, 0.14);
-  --shadow-brand:    0 10px 26px var(--accent-glow);
-  --transition:      0.18s cubic-bezier(.4,0,.2,1);
+  --brand:        #0c5aa6;
+  --brand-dark:   #084a87;
+  --brand-soft:   #eef4fb;
+  --accent:       #0e8f9e;
+  --accent-dark:  #0b6e7a;
+  --ring:         0 0 0 3px rgba(12, 90, 166, 0.16);
+
+  --danger:       #e0393f;
+  --danger-hover: #c62d33;
+  --danger-soft:  #b3474b;
+  --success:      #1f8a4c;
+  --warning:      #b5680c;
+
+  --ink:          #12181f;
+  --ink-soft:     #3c4653;
+  --muted:        #6b7684;
+  --muted-soft:   #97a1ac;
+
+  --canvas:       #f5f7fa;
+  --surface:      #ffffff;
+  --surface-sunk: #f8f9fb;
+  --border:       #e3e7ed;
+  --border-strong:#d2d8e0;
+
+  --radius-xs:    6px;
+  --radius-sm:    9px;
+  --radius:       12px;
+  --radius-lg:    16px;
+
+  --shadow-xs:    0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm:    0 2px 8px rgba(15, 23, 42, 0.07);
+  --shadow-md:    0 10px 28px rgba(15, 23, 42, 0.12);
+
+  --transition:   0.15s cubic-bezier(.4,0,.2,1);
 }
 
 /* ── RESET ── */
@@ -51,127 +52,110 @@
 
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
-  background: var(--gradient-bg);
-  color: var(--gray-800);
+  background: var(--canvas);
+  color: var(--ink);
   display: flex;
   justify-content: center;
-  padding: clamp(16px, 4vw, 48px) clamp(12px, 3vw, 20px);
+  padding: clamp(14px, 3.5vw, 40px) clamp(12px, 3vw, 20px);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── PORTAL ── */
 .portal-container {
-  background-color: var(--white);
+  background-color: var(--surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-sm);
   width: 100%;
-  max-width: 1120px;
-  padding: 0 0 clamp(20px, 4vw, 36px);
+  max-width: 1080px;
+  padding: 0 0 clamp(18px, 3vw, 30px);
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   overflow: hidden;
-  border: 1px solid rgba(12, 40, 70, 0.05);
+  border: 1px solid var(--border);
 }
 
-/* ── HEADER ──
-   Fix (bug confirmado: "encabezado celeste" apareciendo sin pedirlo en
-   hojas Word, y márgenes alterados): estas reglas usaban el selector de
-   ELEMENTO "header" a secas, sin ninguna clase — un selector así aplica a
-   CUALQUIER <header> de todo el documento, sin importar dónde esté. Cuando
-   se generan las hojas Word (docx-preview usa un <header> real, semántico,
-   para el encabezado propio del documento Word), este CSS —pensado solo
-   para la barra superior de esta app— se colaba encima y le imponía su
-   propio degradé celeste, su padding y su centrado, tapando/deformando el
-   encabezado real del Word. Se escapa el selector a ".portal-container >
-   header" para que SOLO afecte a la barra superior de la app. */
+/* ── HEADER ── (plano, compacto — sin el degradado grande ni la curva
+   decorativa de la versión anterior: menos capas que el navegador tiene
+   que pintar, y una barra de marca más discreta.)
+   Selector escapado a ".portal-container > header" para que esta regla
+   SOLO afecte a la barra superior de la propia app, nunca a un <header>
+   semántico que pudiera aparecer en cualquier otro contenido futuro. */
 .portal-container > header {
-  text-align: center;
-  padding: clamp(28px, 5vw, 40px) clamp(20px, 4vw, 40px) 30px;
-  background: var(--gradient-brand);
-  color: var(--white);
-  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-}
-
-.portal-container > header::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 -1px 0;
-  height: 28px;
-  background: var(--white);
-  border-radius: 60% 60% 0 0 / 100% 100% 0 0;
+  gap: 14px;
+  padding: 20px clamp(20px, 4vw, 34px);
+  background: var(--brand);
+  color: var(--surface);
+  border-bottom: 3px solid var(--accent);
 }
 
 .brand-badge {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.16);
-  border: 1px solid rgba(255,255,255,0.35);
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--white);
-  margin-bottom: 4px;
-  backdrop-filter: blur(2px);
+  color: var(--surface);
 }
 
+.header-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
 .portal-container > header h1 {
-  font-size: clamp(19px, 3vw, 26px);
-  letter-spacing: 0.6px;
+  font-size: clamp(17px, 2.4vw, 21px);
+  letter-spacing: 0.3px;
   font-weight: 700;
-  position: relative;
-  z-index: 1;
+  line-height: 1.2;
 }
 
 .subtitle {
-  font-size: 13.5px;
-  color: rgba(255,255,255,0.88);
-  margin-top: 2px;
-  position: relative;
-  z-index: 1;
+  font-size: 12.5px;
+  color: rgba(255,255,255,0.82);
+  line-height: 1.3;
 }
 
 /* ── BANNER CDN ERROR ── */
 .cdn-error-banner {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  color: #856404;
-  padding: 12px 16px;
+  background: #fff6e0;
+  border: 1px solid #f0c239;
+  color: #7a5a05;
+  padding: 11px 16px;
   border-radius: var(--radius-sm);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13.5px;
   text-align: center;
-  margin: 0 clamp(20px, 4vw, 36px);
+  margin: 0 clamp(20px, 4vw, 34px);
 }
 
 /* ── MAIN ── */
 main {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 0 clamp(20px, 4vw, 36px);
+  gap: 16px;
+  padding: 0 clamp(20px, 4vw, 34px);
 }
 
 /* ── DROP ZONE ── */
 .drop-zone {
   width: 100%;
-  min-height: 110px;
-  border: 2px dashed var(--sedapal-blue);
+  min-height: 100px;
+  border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #f8fbff 0%, #f1f8ff 100%);
+  background: var(--surface-sunk);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: border-color var(--transition), background var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: var(--sedapal-blue);
-  font-size: 14.5px;
+  color: var(--brand);
+  font-size: 14px;
   user-select: none;
 }
 
@@ -179,31 +163,30 @@ main {
 
 .drop-zone:hover,
 .drop-zone.drag-over {
-  background: var(--sedapal-light);
+  background: var(--brand-soft);
   border-color: var(--accent);
-  border-width: 2.5px;
-  box-shadow: var(--shadow-brand);
 }
 
 .drop-zone:hover svg,
 .drop-zone.drag-over svg {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
 }
 
 .drop-zone:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
+  outline: none;
+  box-shadow: var(--ring);
+  border-color: var(--accent);
 }
 
 /* ── CONTROLS PANEL ── */
 .controls-panel {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(12px, 2vw, 22px);
-  background: var(--gray-50);
-  padding: 14px 22px;
+  gap: clamp(10px, 2vw, 20px);
+  background: var(--surface-sunk);
+  padding: 12px 18px;
   border-radius: var(--radius);
-  border: 1px solid var(--gray-200);
+  border: 1px solid var(--border);
   justify-content: center;
   align-items: center;
 }
@@ -212,39 +195,41 @@ main {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--gray-700);
+  color: var(--ink-soft);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .control-item input[type="number"] {
-  width: 58px;
+  width: 64px;
   padding: 5px 4px;
-  border: 1px solid var(--gray-400);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
   text-align: center;
-  font-weight: bold;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 13.5px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .control-item input[type="number"]:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: var(--ring);
 }
 
 .control-item input[type="checkbox"],
 .control-item input[type="radio"] {
-  accent-color: var(--sedapal-blue);
-  width: 16px;
-  height: 16px;
+  accent-color: var(--brand);
+  width: 15px;
+  height: 15px;
 }
 
 .control-hint {
-  color: var(--gray-500);
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 12.5px;
   cursor: help;
 }
 
@@ -253,17 +238,17 @@ main {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--gray-50);
-  border: 1px solid var(--gray-200);
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px 18px;
+  padding: 11px 16px;
   flex-wrap: wrap;
 }
 
 .filename-panel label {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--gray-700);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
@@ -272,34 +257,36 @@ main {
   align-items: center;
   flex: 1;
   min-width: 180px;
-  background: var(--white);
-  border: 1px solid var(--gray-400);
-  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
   overflow: hidden;
   transition: box-shadow var(--transition), border-color var(--transition);
 }
 
 .filename-input-wrap:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: var(--ring);
 }
 
 .filename-input-wrap input {
   border: none;
   padding: 8px 10px;
-  font-size: 14px;
+  font-size: 13.5px;
   flex: 1;
   min-width: 0;
   outline: none;
+  color: var(--ink);
+  background: transparent;
 }
 
 .filename-ext {
   padding: 8px 10px;
-  background: var(--gray-100);
-  color: var(--gray-600);
-  font-size: 13px;
+  background: var(--surface-sunk);
+  color: var(--muted);
+  font-size: 12.5px;
   font-weight: 600;
-  border-left: 1px solid var(--gray-300);
+  border-left: 1px solid var(--border);
 }
 
 /* ── WORKSPACE (grid real: reparte el espacio sobrante entre las
@@ -314,18 +301,18 @@ main {
   position: absolute;
   top: 10px;
   right: 10px;
-  background: var(--gradient-brand);
+  background: var(--ink);
   color: white;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 7px 16px;
+  padding: 6px 14px;
   border-radius: 999px;
-  box-shadow: var(--shadow-brand);
+  box-shadow: var(--shadow-sm);
   z-index: 15;
   pointer-events: none;
   opacity: 0;
   transform: translateY(-6px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
   white-space: nowrap;
 }
 
@@ -336,22 +323,22 @@ main {
 
 .workspace {
   width: 100%;
-  min-height: 350px;
+  min-height: 340px;
   max-height: 65vh;
-  background: var(--gray-50);
-  border: 1px solid var(--gray-200);
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 14px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
+  gap: 12px;
   align-content: flex-start;
   overflow-y: auto;
 }
 
 .workspace:empty::after {
-  content: 'Sin páginas aún. Arrastra PDFs o DOCX aquí.';
-  color: var(--gray-500);
+  content: 'Sin páginas aún. Arrastra archivos PDF aquí.';
+  color: var(--muted);
   font-style: italic;
   margin: auto;
   padding: 60px 0;
@@ -360,54 +347,53 @@ main {
 }
 
 .workspace::-webkit-scrollbar { width: 8px; }
-.workspace::-webkit-scrollbar-track { background: var(--gray-100); border-radius: 4px; }
-.workspace::-webkit-scrollbar-thumb { background: var(--gray-400); border-radius: 4px; }
-.workspace::-webkit-scrollbar-thumb:hover { background: var(--gray-500); }
+.workspace::-webkit-scrollbar-track { background: transparent; }
+.workspace::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+.workspace::-webkit-scrollbar-thumb:hover { background: var(--muted-soft); }
 
 /* ── PAGE CARD (dentro del grid: el ancho lo da la columna, la
    altura se deriva por aspect-ratio — crece cuando hay menos por fila) ── */
 .page-card {
   width: 100%;
   aspect-ratio: 2 / 3;
-  border: 1px solid var(--gray-300);
-  background: var(--white);
+  border: 1px solid var(--border);
+  background: var(--surface);
   position: relative;
   cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow);
   border-radius: var(--radius-sm);
   user-select: none;
   overflow: visible;
-  transition: transform 0.14s ease, border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .page-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-xs);
 }
 
 .page-card:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .page-card:active { cursor: grabbing; }
 
 .page-card.selected {
-  border: 2px solid var(--accent);
-  background-color: var(--sedapal-light);
-  box-shadow: 0 6px 18px var(--accent-glow);
+  border: 1.5px solid var(--accent);
+  background-color: var(--brand-soft);
+  box-shadow: var(--ring);
 }
 
 .page-card.sortable-ghost {
   opacity: 0.3;
-  background-color: var(--gray-200);
+  background-color: var(--border);
 }
 
 .page-card.sortable-chosen {
-  box-shadow: 0 10px 26px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-md);
   z-index: 100;
 }
 
@@ -416,27 +402,15 @@ main {
 }
 
 .page-card.page-failed {
-  border: 2px dashed var(--danger);
-  background-color: #fff5f5;
+  border: 1.5px dashed var(--danger);
+  background-color: #fdf1f1;
   cursor: not-allowed;
   flex-direction: column;
   gap: 4px;
 }
 
-.failed-icon { font-size: 28px; }
+.failed-icon { font-size: 26px; }
 .failed-text { font-size: 10px; color: var(--danger); text-align: center; }
-
-.page-card.word-page {
-  border-left: 3px solid #2b579a;
-}
-
-.page-card.image-page {
-  border-left: 3px solid #2b8a3e;
-}
-
-.page-card.pdf-page {
-  border-left: 3px solid #c0392b;
-}
 
 /* ── BLOQUE (archivo completo como una sola unidad) ──
    Un .page-group ocupa toda la fila del grid del workspace: por dentro es
@@ -447,18 +421,17 @@ main {
    eliminables una por una mientras estén agrupadas (ver .in-group). */
 .page-group {
   grid-column: 1 / -1;
-  border: 1px solid var(--gray-300);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--sedapal-light);
-  box-shadow: var(--shadow);
+  background: var(--brand-soft);
   cursor: grab;
   overflow: hidden;
 }
 
 .page-group:active { cursor: grabbing; }
 
-.page-group.sortable-ghost { opacity: 0.3; background-color: var(--gray-200); }
-.page-group.sortable-chosen { box-shadow: 0 10px 26px rgba(0,0,0,0.18); z-index: 100; }
+.page-group.sortable-ghost { opacity: 0.3; background-color: var(--border); }
+.page-group.sortable-chosen { box-shadow: var(--shadow-md); z-index: 100; }
 .page-group.sortable-drag { opacity: 0.7; }
 
 .page-group-header {
@@ -468,8 +441,8 @@ main {
   gap: 10px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  background: rgba(255,255,255,0.6);
-  border-bottom: 1px solid var(--gray-200);
+  background: rgba(255,255,255,0.65);
+  border-bottom: 1px solid var(--border);
 }
 
 .page-group-title {
@@ -497,19 +470,20 @@ main {
 }
 
 .btn-ungroup {
-  border: 1px solid var(--gray-300);
-  background: var(--white);
-  color: var(--gray-700);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
   font-size: 11px;
   font-weight: 600;
   padding: 5px 10px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
 .btn-ungroup:hover {
-  background: var(--sedapal-light);
+  background: var(--brand-soft);
   border-color: var(--accent);
   color: var(--accent-dark);
 }
@@ -536,9 +510,8 @@ main {
   display: none;
 }
 
-/* Contenedor recortado de la miniatura (para que la imagen no se salga al rotar/espejar) */
-/* La miniatura ahora ocupa toda la tarjeta (las flechas son overlay
-   flotante, ya no reservan su propia franja de espacio) */
+/* Contenedor recortado de la miniatura — la miniatura ocupa toda la
+   tarjeta (las flechas son overlay flotante, no reservan espacio propio). */
 .page-image-frame {
   width: 100%;
   height: 100%;
@@ -554,7 +527,7 @@ main {
   position: absolute;
   bottom: 6px;
   right: 6px;
-  background: var(--gradient-brand);
+  background: var(--ink);
   color: white;
   font-size: 11px;
   font-weight: bold;
@@ -563,48 +536,6 @@ main {
   z-index: 12;
   pointer-events: none;
   animation: badge-pop 0.2s ease;
-}
-
-.word-badge {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: #2b579a;
-  color: white;
-  font-size: 9px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 10;
-  letter-spacing: 0.5px;
-}
-
-.image-badge {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: #2b8a3e;
-  color: white;
-  font-size: 9px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 10;
-  letter-spacing: 0.5px;
-}
-
-.pdf-badge {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: #c0392b;
-  color: white;
-  font-size: 9px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 10;
-  letter-spacing: 0.5px;
 }
 
 @keyframes badge-pop {
@@ -629,8 +560,8 @@ main {
   color: white;
   border: none;
   border-radius: 50%;
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
   font-size: 10px;
   cursor: pointer;
   font-weight: bold;
@@ -643,13 +574,13 @@ main {
 
 .btn-delete-page:hover {
   background: var(--danger-hover);
-  transform: scale(1.1);
+  transform: scale(1.08);
 }
 
-/* ── HERRAMIENTAS DE ROTACIÓN / ESPEJO ──
+/* ── HERRAMIENTAS DE ROTACIÓN ──
    Solo aparecen sobre una tarjeta SELECCIONADA (no dependen de :hover,
    así permanecen mientras dure la selección y funcionan igual en
-   pantallas táctiles / navegación por teclado). Rojo, sutil. */
+   pantallas táctiles / navegación por teclado). */
 .card-tools {
   position: absolute;
   left: 0;
@@ -674,8 +605,8 @@ main {
   height: 20px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.65);
-  color: var(--danger-soft);
+  background: rgba(255,255,255,0.75);
+  color: var(--ink-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -692,21 +623,21 @@ main {
 
 .card-tool:hover,
 .card-tool:focus-visible {
-  color: var(--danger-soft-hi);
-  background: rgba(255,255,255,0.95);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-  transform: scale(1.12);
+  color: var(--brand);
+  background: rgba(255,255,255,0.98);
+  box-shadow: var(--shadow-xs);
+  transform: scale(1.1);
   outline: none;
 }
 
-/* Indicador discreto de transformación activa (esquina superior derecha, chiquito) */
+/* Indicador discreto de rotación activa (esquina superior derecha, chiquito) */
 .transform-indicator {
   position: absolute;
   top: 4px;
   right: 30px;
   font-size: 9px;
-  color: var(--danger-soft-hi);
-  background: rgba(255,255,255,0.85);
+  color: var(--ink-soft);
+  background: rgba(255,255,255,0.9);
   padding: 1px 4px;
   border-radius: 3px;
   z-index: 10;
@@ -716,37 +647,34 @@ main {
 
 /* ── BOTÓN PRIMARIO ── */
 .btn-primary {
-  background: var(--gradient-brand);
+  background: var(--brand);
   color: white;
-  padding: 15px 40px;
+  padding: 13px 32px;
   border: none;
-  border-radius: 999px;
-  font-size: 16px;
-  font-weight: bold;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
   align-self: center;
-  transition: box-shadow var(--transition), transform 0.12s;
+  transition: background var(--transition), transform 0.1s;
   display: flex;
   align-items: center;
   gap: 8px;
-  box-shadow: var(--shadow-brand);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 .btn-primary:hover:not(:disabled) {
-  box-shadow: 0 14px 32px var(--accent-glow);
-  transform: translateY(-2px);
+  background: var(--brand-dark);
 }
 
 .btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
 }
 
 .btn-primary:disabled {
-  background: var(--gray-400);
-  box-shadow: none;
+  background: var(--border-strong);
+  color: var(--muted);
   cursor: not-allowed;
-  transform: none;
 }
 
 /* ── OVERLAY ── */
@@ -756,25 +684,25 @@ main {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.96);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  color: var(--sedapal-blue);
+  color: var(--brand);
   font-weight: 600;
   gap: 12px;
 }
 
 /* ── LOADER ── */
 .loader {
-  border: 5px solid var(--gray-200);
-  border-top: 5px solid var(--accent);
+  border: 4px solid var(--border);
+  border-top: 4px solid var(--accent);
   border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  animation: spin 1s linear infinite;
+  width: 42px;
+  height: 42px;
+  animation: spin 0.9s linear infinite;
 }
 
 @keyframes spin {
@@ -785,23 +713,23 @@ main {
 /* ── PROGRESS BAR ── */
 progress {
   width: min(300px, 80vw);
-  height: 10px;
-  border-radius: 5px;
+  height: 8px;
+  border-radius: 4px;
   overflow: hidden;
   border: none;
-  background: var(--gray-200);
+  background: var(--border);
 }
 
-progress::-webkit-progress-bar { background: var(--gray-200); border-radius: 5px; }
+progress::-webkit-progress-bar { background: var(--border); border-radius: 4px; }
 progress::-webkit-progress-value {
-  background: var(--gradient-brand);
-  border-radius: 5px;
+  background: var(--brand);
+  border-radius: 4px;
   transition: width 0.3s ease;
 }
 
 progress::-moz-progress-bar {
-  background: var(--gradient-brand);
-  border-radius: 5px;
+  background: var(--brand);
+  border-radius: 4px;
 }
 
 /* ── TOAST ── */
@@ -817,34 +745,34 @@ progress::-moz-progress-bar {
 }
 
 .toast {
-  padding: 12px 18px;
+  padding: 11px 16px;
   border-radius: var(--radius-sm);
   color: white;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  animation: toast-in 0.3s ease;
+  animation: toast-in 0.25s ease;
   word-break: break-word;
 }
 
-.toast.toast-info    { background: var(--sedapal-blue); }
+.toast.toast-info    { background: var(--brand); }
 .toast.toast-success { background: var(--success); }
 .toast.toast-error   { background: var(--danger); }
 .toast.toast-warning { background: var(--warning); }
 
 .toast.toast-out {
-  animation: toast-out 0.3s ease forwards;
+  animation: toast-out 0.25s ease forwards;
 }
 
 @keyframes toast-in {
-  0% { transform: translateX(120%); opacity: 0; }
+  0% { transform: translateX(110%); opacity: 0; }
   100% { transform: translateX(0); opacity: 1; }
 }
 
 @keyframes toast-out {
   0% { transform: translateX(0); opacity: 1; }
-  100% { transform: translateX(120%); opacity: 0; }
+  100% { transform: translateX(110%); opacity: 0; }
 }
 
 /* ── UTILIDADES ── */
@@ -874,11 +802,11 @@ progress::-moz-progress-bar {
   gap: 14px;
   flex-wrap: wrap;
   justify-content: center;
-  background: rgba(255,255,255,0.97);
-  border: 1px solid var(--gray-300);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 8px 18px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   z-index: 20;
 }
 
@@ -887,14 +815,14 @@ progress::-moz-progress-bar {
 .selection-count {
   font-size: 12px;
   font-weight: 700;
-  color: var(--sedapal-blue);
+  color: var(--brand);
   white-space: nowrap;
 }
 
 .btn-force {
-  border: 1px solid var(--gray-300);
-  background: var(--white);
-  color: var(--gray-700);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 600;
   padding: 6px 12px;
@@ -905,7 +833,7 @@ progress::-moz-progress-bar {
 }
 
 .btn-force:hover {
-  background: var(--sedapal-light);
+  background: var(--brand-soft);
   border-color: var(--accent);
   color: var(--accent-dark);
 }
@@ -915,9 +843,9 @@ progress::-moz-progress-bar {
   cursor: not-allowed;
 }
 .btn-force:disabled:hover {
-  background: var(--white);
-  border-color: var(--gray-300);
-  color: var(--gray-700);
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--ink-soft);
 }
 
 /* ── DESHACER / REHACER ── */
@@ -925,19 +853,17 @@ progress::-moz-progress-bar {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin: 6px 2px 0;
+  margin: 4px 2px 0;
 }
 
 /* ── FOOTER ──
-   Mismo fix que el header de arriba: escapado a ".portal-container >
-   footer" para no imponerle su propio centrado/color/tamaño/margen al
-   <footer> real de una hoja Word (docx-preview también usa un <footer>
-   semántico para el pie de página propio del documento). */
+   Mismo criterio que el header de arriba: escapado a ".portal-container >
+   footer" para que solo afecte al pie propio de la app. */
 .portal-container > footer {
   text-align: center;
-  color: var(--gray-500);
+  color: var(--muted);
   font-size: 12px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 /* ═══════════════════════════════════════════════
@@ -955,17 +881,16 @@ progress::-moz-progress-bar {
 .page-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(10, 18, 28, 0.75);
-  backdrop-filter: blur(2px);
+  background: rgba(10, 14, 20, 0.7);
 }
 
 .page-modal-content {
   position: relative;
   z-index: 1;
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 20px;
+  box-shadow: var(--shadow-md);
+  padding: 18px;
   width: min(720px, 94vw);
   max-height: 92vh;
   display: flex;
@@ -978,10 +903,10 @@ progress::-moz-progress-bar {
 .range-modal-content {
   position: relative;
   z-index: 1;
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 24px;
+  box-shadow: var(--shadow-md);
+  padding: 22px;
   width: min(520px, 94vw);
   max-height: 92vh;
   overflow-y: auto;
@@ -991,13 +916,13 @@ progress::-moz-progress-bar {
 }
 
 .range-modal-content h3 {
-  font-size: 17px;
-  color: var(--gray-800);
+  font-size: 16px;
+  color: var(--ink);
 }
 
 .range-modal-filename {
   font-size: 13px;
-  color: var(--gray-600);
+  color: var(--muted);
   word-break: break-all;
   margin-top: -8px;
 }
@@ -1009,21 +934,23 @@ progress::-moz-progress-bar {
   flex-wrap: wrap;
   font-size: 13px;
   font-weight: 600;
-  color: var(--gray-700);
+  color: var(--ink-soft);
 }
 
 .range-inputs input[type="number"] {
   width: 70px;
   margin-left: 6px;
   padding: 6px 8px;
-  border: 1px solid var(--gray-300);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
   font-size: 14px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .range-count-label {
   font-weight: 400;
-  color: var(--gray-500);
+  color: var(--muted);
 }
 
 .range-preview {
@@ -1038,16 +965,16 @@ progress::-moz-progress-bar {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--gray-500);
+  color: var(--muted);
 }
 
 .range-preview-item img {
   width: 100%;
   aspect-ratio: 1 / 1.4142;
   object-fit: contain;
-  background: var(--gray-100);
-  border: 1px solid var(--gray-200);
-  border-radius: 8px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
 }
 
 .range-modal-actions {
@@ -1058,20 +985,20 @@ progress::-moz-progress-bar {
 }
 
 /* Marco con proporción real de hoja A4 (1 : 1.4142) — la imagen se ve
-   como una hoja completa, no recortada ni encogida artificialmente. */
-/* La proporción real (aspect-ratio) se fija por JS según cada hoja
-   (considerando su rotación) — aquí solo se acotan los límites máximos. */
+   como una hoja completa, no recortada ni encogida artificialmente.
+   La proporción real se fija por JS según cada hoja (considerando su
+   rotación) — aquí solo se acotan los límites máximos. */
 .modal-image-wrap {
   position: relative;
   max-height: 74vh;
   max-width: 100%;
-  aspect-ratio: 1 / 1.4142; /* valor de arranque por defecto, antes de abrir la primera hoja */
+  aspect-ratio: 1 / 1.4142; /* valor de arranque por defecto */
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--gray-50);
+  background: var(--surface-sunk);
   border-radius: var(--radius-sm);
-  overflow: hidden; /* recorta la imagen cuando está en zoom, para que no se salga del marco */
+  overflow: hidden; /* recorta la imagen cuando está en zoom */
 }
 
 .modal-image.zoomable { cursor: zoom-in; }
@@ -1083,7 +1010,7 @@ progress::-moz-progress-bar {
   bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(20,25,30,0.65);
+  background: rgba(15,20,26,0.7);
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -1104,22 +1031,22 @@ progress::-moz-progress-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.6);
   border-radius: var(--radius-sm);
 }
 
 .modal-loader.hidden { display: none; }
 
 .modal-loader .loader {
-  width: 34px;
-  height: 34px;
-  border-width: 4px;
+  width: 32px;
+  height: 32px;
+  border-width: 3.5px;
 }
 
 .modal-page-count {
   font-size: 12px;
   font-weight: 700;
-  color: var(--gray-600);
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -1134,35 +1061,35 @@ progress::-moz-progress-bar {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: none;
-  background: var(--gray-100);
-  color: var(--gray-700);
-  font-size: 14px;
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+  font-size: 13px;
   cursor: pointer;
   z-index: 2;
   transition: background var(--transition);
 }
 
-.modal-close:hover { background: var(--gray-200); }
+.modal-close:hover { background: var(--border); }
 
-/* Los botones de navegación ahora se centran SOLO respecto al marco de
-   la imagen (.modal-image-wrap), no respecto a todo el modal — así ya
-   no caen encima de la barra de herramientas de abajo. */
+/* Los botones de navegación se centran SOLO respecto al marco de la
+   imagen (.modal-image-wrap), no respecto a todo el modal — así no caen
+   encima de la barra de herramientas de abajo. */
 .modal-nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: none;
-  background: rgba(255,255,255,0.92);
-  box-shadow: var(--shadow);
-  color: var(--sedapal-blue);
-  font-size: 22px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.95);
+  box-shadow: var(--shadow-xs);
+  color: var(--brand);
+  font-size: 20px;
   font-weight: bold;
   cursor: pointer;
   display: flex;
@@ -1172,7 +1099,7 @@ progress::-moz-progress-bar {
   transition: transform var(--transition);
 }
 
-.modal-nav:hover:not(:disabled) { transform: translateY(-50%) scale(1.08); }
+.modal-nav:hover:not(:disabled) { transform: translateY(-50%) scale(1.06); }
 .modal-nav:disabled { opacity: 0.3; cursor: not-allowed; }
 .modal-prev { left: -14px; }
 .modal-next { right: -14px; }
@@ -1180,7 +1107,7 @@ progress::-moz-progress-bar {
 .modal-toolbar {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   flex-wrap: wrap;
   justify-content: center;
   width: 100%;
@@ -1196,19 +1123,20 @@ progress::-moz-progress-bar {
   opacity: 1;
   pointer-events: auto;
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 .modal-tools .card-tool {
   position: static;
-  width: 38px;
-  height: 38px;
-  background: var(--gray-100);
+  width: 36px;
+  height: 36px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
   opacity: 1;
   pointer-events: auto;
 }
 
-.modal-tools .card-tool svg { width: 20px; height: 20px; }
+.modal-tools .card-tool svg { width: 18px; height: 18px; }
 
 /* ═══════════════════════════════════════════════
    RESPONSIVE
@@ -1233,17 +1161,18 @@ progress::-moz-progress-bar {
     max-width: none;
   }
   .page-modal-content { width: 96vw; padding: 12px; }
-  .modal-nav { width: 36px; height: 36px; font-size: 20px; }
+  .modal-nav { width: 34px; height: 34px; font-size: 18px; }
 }
 
 @media (max-width: 480px) {
   .workspace { grid-template-columns: repeat(2, 1fr); }
   .drop-zone {
-    min-height: 80px;
-    font-size: 13px;
+    min-height: 76px;
+    font-size: 12.5px;
     flex-direction: column;
     gap: 6px;
   }
+  .portal-container > header { flex-wrap: wrap; }
 }
 
 /* ═══════════════════════════════════════════════

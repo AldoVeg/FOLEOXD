@@ -138,9 +138,9 @@ Se analizó el proyecto completo (`index.html`, `index.css`, `index.js`): una ap
 
 ## Resumen de archivos modificados
 
-- `index.html` — estructura, controles de foleo, badges, CDN de docx-preview + jszip (reemplaza a mammoth.js), (Ronda 13) botones Deshacer/Rehacer y modal de rango de páginas.
-- `index.css` — rediseño visual completo, badges de formato, cuadro flotante, estilos de zoom, (Ronda 10) selectores `header`/`footer` escapados a `.portal-container`, y (Ronda 13) estilos del modal de rango y del bloque de archivo (`.page-group`).
-- `index.js` — toda la lógica: generación de PDF en dos pasadas, soporte de imágenes, corrección del doble-incrustado de Word, corrección de bordes de tabla, corrección del bug de compresión por flexbox, zoom con movilidad, contador flotante, mensajes de error específicos, (Ronda 9) el motor de lectura de Word reemplazado por completo por `docx-preview`, (Ronda 11) `waitForImagesAndMarkBroken()` para que una imagen de Word en un formato no decodificable quede marcada de forma visible, (Ronda 12) `markUnsupportedDrawings()` para lo mismo con gráficos/objetos nativos no soportados, y (Ronda 13) deshacer/rehacer, soporte WEBP/GIF/TIFF, selección de rango de páginas y agrupamiento de archivo completo como bloque.
+- `index.html` — estructura, controles de foleo, (Ronda 13) botones Deshacer/Rehacer y modal de rango de páginas, (Ronda 14) CDN de docx-preview/jszip/html2canvas retirados por completo, input restringido a `.pdf`.
+- `index.css` — rediseño visual completo, cuadro flotante, estilos de zoom, (Ronda 10) selectores `header`/`footer` escapados a `.portal-container`, (Ronda 13) estilos del modal de rango y del bloque de archivo (`.page-group`), (Ronda 14) badges de formato y estilos de espejo retirados.
+- `index.js` — toda la lógica: generación de PDF en dos pasadas, corrección del bug de compresión por flexbox, zoom con movilidad, contador flotante, mensajes de error específicos, (Ronda 13) deshacer/rehacer, selección de rango de páginas y agrupamiento de archivo completo como bloque, (Ronda 14) motor reducido a exclusivo PDF (fuera Word/imágenes y todo su procesamiento — `processWord`, `processImage`, `docx-preview`, etc., de las Rondas 3-12), espejo horizontal/vertical retirado en toda la app, límite de páginas subido de 400 a 2000.
 
 ---
 
@@ -225,3 +225,63 @@ Al adjuntar un PDF o Word de más de una página, se pregunta si se quiere desgl
 - Bloque de archivo: 18 verificaciones (estructura, generación del PDF con el bloque intacto, rotar todo el bloque a la vez, eliminar+deshacer restaurando como bloque, desagrupar, rechazar la propuesta y quedar como páginas individuales, y un lote mixto de bloque + hoja suelta).
 
 99/99 verificaciones en total, sin ninguna regresión sobre las 46 anteriores.
+
+---
+
+## Ronda 14 — Ligereza extrema: exclusivo PDF, sin espejo, hasta ~2000 páginas
+
+**Pedido:** "hagámoslo súper ligero, pero potente [...] eliminemos las vistas de espejo tanto lateral u horizontal en toda la app, simplifica los procesos [...] se puede trabajar solo con el formato PDF (exclusiva) pero lograr aproximadamente 2k de páginas, para el foleo respectivo? Si lo hubiese, solo hazlo, sin validar [conmigo cada paso]. Dale un estilo moderno, pero súper ligero."
+
+**Cambio de alcance (decisión de arquitectura, la más grande desde la Ronda 9):** se retira por completo el soporte de Word (.docx) e imágenes (PNG/JPG/WEBP/GIF), incluidas todas sus dependencias externas — `docx-preview`, `jszip` y `html2canvas` ya no se cargan. La app pasa a ser exclusivamente PDF. Esto no es solo un recorte de funciones: reduce a la mitad el peso de librerías que baja el navegador al abrir la página, y elimina de raíz toda la complejidad que esas dos rutas arrastraban (paginado de Word, detección de imágenes/gráficos no soportados, recomposición WEBP/GIF a PNG, etc.), que era la mayoría del código y de los bugs de las Rondas 3, 5, 7-12.
+
+**Espejo (horizontal/vertical) eliminado en toda la app:** se quitaron los botones de espejo de las tarjetas, del modal y de los bloques, junto con `mirrorH`/`mirrorV` en el registro de páginas, el historial de deshacer/rehacer, la geometría de dibujo del PDF final (`drawTransformedContent` ya no compone un offset de espejo, solo rotación) y el estado de zoom del modal. La rotación (90°) y "Forzar Vertical/Horizontal" —que son orientación, no espejo— se mantienen intactos.
+
+**Límite de páginas subido de 400 a 2000:** con el motor de Word/imágenes fuera, el flujo de generación del PDF final quedó reducido a una sola rama (incrustar página de PDF fuente vía `embedPage`), la misma que ya venía optimizada desde antes (`getPages()` cacheado una vez por archivo, evitando el costo O(n²) que antes se volvía inestable pasado ~150-200 páginas). El límite de bytes por lote se subió de 200MB a 500MB en consecuencia.
+
+**Simplificación adicional (limpieza sin que se pidiera explícitamente, además de lo mínimo):**
+- Los badges de tipo de hoja ("W", "IMG", "PDF") se quitaron: con un solo formato posible, distinguir el tipo por color ya no aporta nada y solo agregaba ruido visual y CSS.
+- Se quitó un `<canvas>` oculto (`#offscreen-canvas`) que ya no tenía ninguna referencia en el código — confirmado por búsqueda antes de borrarlo.
+- Se simplificó la generación del PDF final: al no existir más las ramas de Word/imagen, `getRotateOffset`/`drawTransformedContent` perdieron toda la aritmética de composición de espejo, y el bucle principal de generación se redujo a una sola rama en vez de tres.
+- El destructuring `const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib` tenía una variable (`degrees`) que nunca se usaba (el código llama a `PDFLib.degrees(...)` directo) — se quitó.
+- Comentarios históricos en `index.css` sobre por qué el header/footer de la app están escapados a `.portal-container >` (para no chocar con el `<header>`/`<footer>` que generaba docx-preview) se acortaron: la causa original ya no existe, pero el selector escapado se mantiene como buena práctica defensiva.
+
+**Testeo (Puppeteer + Chromium real, contra la app real servida por HTTP, no una simulación):** se generó un PDF de 3 páginas con `pdf-lib` y se lo cargó en la app real corriendo en un servidor local. Verificado:
+- Las 3 páginas se cargan como tarjetas (`cardCount: 3`).
+- **Cero botones de espejo** en todo el DOM (`mirrorButtons: 0`), incluyendo el modal.
+- **Cero badges** de tipo de hoja (`badges: 0`).
+- Con foleo activado, el botón "Unificar y Descargar" genera y descarga un PDF real (`SEDAPAL_Unificado_<fecha>.pdf`) sin errores de consola ni de página.
+- `node --check` sobre `index.js` confirma sintaxis válida; búsqueda exhaustiva confirmó cero referencias colgantes a las funciones/variables retiradas (`processWord`, `processImage`, `mirrorH`, `mirrorV`, `isWord`, `isImage`, `detectImageType`, etc.).
+
+---
+
+## Ronda 15 — Rediseño visual completo
+
+**Pedido:** "esperaba también que cambies la forma de cómo se ve actualmente, como renovando todo" — tras la Ronda 14 (simplificación funcional), el usuario pidió que el aspecto visual también se renovara, no solo el motor por dentro.
+
+**Cambio:** reescritura completa de `index.css` manteniendo intactos todos los selectores que usa `index.js` (ningún gancho de JavaScript se tocó), pero con una dirección visual nueva — de un estilo con degradados grandes, sombras "glow" y esquinas muy redondeadas, a uno plano y compacto:
+- Paleta reducida a tonos neutros (superficie/borde/texto en escala de grises) más el azul institucional como único acento sólido — ya no hay gradientes de fondo con múltiples capas radiales ni sombras de color difuminadas.
+- **Header rediseñado**: de una franja grande centrada con una curva decorativa en la base, a una barra compacta y plana (insignia + título en una sola fila), con un filete de acento en el borde inferior en vez del degradado azul-cian completo.
+- Radios de esquina, paddings y sombras reducidos en todos los componentes (tarjetas, paneles, modal, toasts, botones) para un aspecto más "crisp" y menos "burbujeante".
+- Botón primario y botones de "forzar orientación"/deshacer-rehacer: relleno sólido en vez de degradado con resplandor, con un estado hover de color sólido más oscuro.
+- Fondo de la página: de tres gradientes radiales superpuestos a un solo tono plano — menos capas que el navegador tiene que componer.
+
+**Testeo:** se corrió el mismo smoke test de Puppeteer contra la app real (carga de un PDF de 3 páginas, generación con foleo) y se capturó una captura de pantalla real del resultado — confirmado visualmente el nuevo aspecto y confirmado por consola que no se rompió ningún gancho de JavaScript (mismo resultado que la Ronda 14: `cardCount: 3`, `mirrorButtons: 0`, PDF generado sin errores).
+
+---
+
+## Ronda 16 — Foleo a 4 cifras (consecuencia directa de subir el tope a 2000 páginas)
+
+**Pedido:** "es obvio que ahora el foleo tendrá que ser de 4 cifras, si no hubiese algún detalle más por considerar, actualiza el .md y refresca en el repositorio."
+
+**Análisis:** correcto — el sello de foleo se generaba con `padStart(3, '0')`, es decir 3 cifras con tope visual en "999". Al subir el límite del workspace a ~2000 páginas (Ronda 14), un lote grande foleado desde el número 1 llegaba hasta "2000" pero se mostraba como "2000" sin problema (el `padStart` solo agrega ceros a la IZQUIERDA, nunca corta cifras de más), así que técnicamente no había overflow — pero sí una inconsistencia visual: hojas tempranas del lote se veían como "001" (3 cifras) mientras que las últimas ya tenían 4, dando un sello con ancho inconsistente dentro del mismo documento. Se revisó también si había otro techo relacionado que se hubiera quedado corto:
+
+- **Encontrado:** el campo "Iniciar en" (`#folio-start`) tenía `max="999"` en el HTML — un remanente de cuando el tope de páginas era 400 (Ronda 1-13). Con hasta 2000 páginas por lote, el usuario no podía ni siquiera escribir un número de inicio de 4 cifras desde ese campo.
+- **Revisado y descartado:** el ancho del sello del foleo en el PDF final ya se calcula dinámicamente contra el ancho real del texto (`font.widthOfTextAtSize`, ver Ronda 2) — el cambio a 4 cifras no necesita ningún ajuste ahí, se ensancha solo.
+- **Revisado y descartado:** el campo de texto "Iniciar en" en pantalla tenía 56px de ancho, calculado para 3 cifras — se amplió a 64px para que 4 cifras (o un eventual 5° dígito, si el usuario combina un inicio alto con un lote grande) se vean con aire, no apretadas.
+
+**Cambios:**
+- `index.js`: `padStart(3, '0')` → `padStart(4, '0')` en el sello del foleo.
+- `index.html`: `#folio-start` — `max="999"` → `max="9999"`.
+- `index.css`: `.control-item input[type="number"]` — ancho `56px` → `64px`.
+
+**Testeo (medición real, no visual):** se generó un PDF de 3 páginas con la app real y foleo activado, y se extrajo el texto del PDF **descargado** con `pdfjs-dist` (no una inspección del navegador) — confirmado que el sello ahora imprime "0001", "0002", "0003" en vez de "001", "002", "003".

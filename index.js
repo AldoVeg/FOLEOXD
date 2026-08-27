@@ -1,21 +1,23 @@
 /* ═══════════════════════════════════════════════════
-   index.js — UNIFICADOR SEDAPAL (Fortificado v8)
-   ✅ Multi-Drag manual de grupo
-   ✅ Documentos mixtos: PDF + Word/DOCX + imágenes PNG/JPG
+   index.js — UNIFICADOR SEDAPAL (Ligero v9 — exclusivo PDF)
+   ✅ Exclusivo PDF: sin Word ni imágenes — menos dependencias
+      (fuera docx-preview/jszip/html2canvas), carga más rápida,
+      motor mucho más simple
+   ✅ Hasta ~2000 páginas por lote (antes 400)
    ✅ Foleo normal + inverso, SIEMPRE arriba-derecha, con
-      total opcional ("003 / 045")
-   ✅ Rotación (90°) + Espejo (horizontal/vertical) combinables
+      total opcional
+   ✅ Rotación (90°), con alcance de transformación: esta hoja /
+      seleccionadas / todas
+   ✅ Deshacer/Rehacer (Ctrl+Z / Ctrl+Y): reordenar, eliminar, rotar
    ✅ Zoom con doble clic + arrastre en la vista ampliada
-   ✅ Alcance de transformación: esta hoja / seleccionadas / todas
+   ✅ Rango de páginas al adjuntar un PDF grande, con vista previa real
+   ✅ Bloque: trabajar un archivo completo como una sola unidad
    ✅ Nombre de archivo personalizado
-   ✅ Paginación Word real (ya no genera hojas en blanco)
    ✅ Generación en 2 pasadas: una hoja en blanco por fallo de
       inserción NUNCA gasta ni recibe número de foleo, y además
       queda marcada de forma explícita DENTRO del PDF final —
-      "hoja en blanco silenciosa" es un caso que ya no existe
-   ✅ Reintentos en inserciones PDF/Word/imagen + espera real de
-      imágenes/fuentes en Word (menos hojas en blanco por timing)
-   ✅ Límite de memoria/páginas · Guardas de CDN reforzadas
+      "hoja en blanco silenciosa" es un caso que no existe
+   ✅ Reintentos en inserciones PDF · Límite de memoria/páginas
    ✅ IIFE estricto · Magic bytes
    ═══════════════════════════════════════════════════ */
 
@@ -40,14 +42,12 @@
     if (typeof Sortable === 'undefined') {
       console.warn('⚠️ SortableJS no disponible. Solo drag nativo.');
     }
-    const HTML2CANVAS_OK  = typeof html2canvas !== 'undefined';
-    const DOCXPREVIEW_OK  = typeof docx !== 'undefined' && typeof JSZip !== 'undefined';
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    /* ── Límites de memoria / seguridad de ejecución (Fix #7) ── */
-    const MAX_TOTAL_PAGES  = 400;                 // páginas totales permitidas en el workspace
-    const MAX_TOTAL_BYTES  = 200 * 1024 * 1024;   // 200MB de archivos cargados por lote
+    /* ── Límites de memoria / seguridad de ejecución ── */
+    const MAX_TOTAL_PAGES  = 2000;                // páginas totales permitidas en el workspace
+    const MAX_TOTAL_BYTES  = 500 * 1024 * 1024;   // 500MB de archivos cargados por lote
 
     /* ── Referencias DOM ── */
     const workspace       = document.getElementById('workspace');
@@ -63,9 +63,7 @@
     const outputFilenameInput = document.getElementById('output-filename');
 
     /* ── Estado interno ── */
-    let pdfDocumentsData   = new Map();
-    let wordDocumentsData  = new Map();
-    let imageDocumentsData = new Map(); // fileId -> { buffer, name, mimeType } (imagen ORIGINAL sin recomprimir)
+    let pdfDocumentsData  = new Map();
     let pageRegistry      = [];
     let multiDragGroup    = null;
     let multiDragAnchor   = null;
@@ -132,11 +130,6 @@
       return arr[0] === 0x25 && arr[1] === 0x50 && arr[2] === 0x44 && arr[3] === 0x46; // %PDF
     }
 
-    function isValidDOCX(buffer) {
-      const arr = new Uint8Array(buffer.slice(0, 2));
-      return arr[0] === 0x50 && arr[1] === 0x4B; // PK (zip)
-    }
-
     /* Reintenta una operación async hasta `attempts` veces (blindaje ante
        fallos puntuales de inserción/incrustación durante la generación del
        PDF final — Fix: "páginas en blanco foleadas"). Si `fn` lanza a mitad
@@ -154,55 +147,6 @@
       }
       throw lastErr;
     }
-
-    /* Detecta el formato real de imagen por firma de bytes (nunca por
-       extensión/MIME, que el usuario o el sistema operativo pueden
-       reportar mal). PNG/JPG se incrustan tal cual (pdf-lib los soporta
-       de forma nativa); WEBP/GIF el navegador los decodifica sin problema
-       pero pdf-lib NO tiene un embedWebp/embedGif propio, así que se
-       recomponen a PNG sin pérdida antes de incrustarlos (ver
-       processImage) — se avisa de esto explícitamente, nunca en silencio.
-       TIFF no se puede decodificar en NINGÚN navegador, así que se
-       detecta para rechazarlo con un mensaje claro (mismo trato que
-       ".doc"), en vez de fallar sin explicación. */
-    function detectImageType(buffer) {
-      const arr = new Uint8Array(buffer.slice(0, 12));
-      if (arr[0] === 0x89 && arr[1] === 0x50 && arr[2] === 0x4E && arr[3] === 0x47) return 'png';
-      if (arr[0] === 0xFF && arr[1] === 0xD8 && arr[2] === 0xFF) return 'jpeg';
-      // WEBP: "RIFF"...."WEBP"
-      if (arr[0] === 0x52 && arr[1] === 0x49 && arr[2] === 0x46 && arr[3] === 0x46 &&
-          arr[8] === 0x57 && arr[9] === 0x45 && arr[10] === 0x42 && arr[11] === 0x50) return 'webp';
-      // GIF: "GIF87a" o "GIF89a"
-      if (arr[0] === 0x47 && arr[1] === 0x49 && arr[2] === 0x46 && arr[3] === 0x38 &&
-          (arr[4] === 0x37 || arr[4] === 0x39) && arr[5] === 0x61) return 'gif';
-      // TIFF: "II*\0" (little-endian) o "MM\0*" (big-endian)
-      if ((arr[0] === 0x49 && arr[1] === 0x49 && arr[2] === 0x2A && arr[3] === 0x00) ||
-          (arr[0] === 0x4D && arr[1] === 0x4D && arr[2] === 0x00 && arr[3] === 0x2A)) return 'tiff';
-      return null;
-    }
-
-    /* Convierte un ArrayBuffer a base64 en trozos (evita el límite de
-       argumentos de String.fromCharCode al pasarle un buffer grande de una
-       sola vez, algo real con fotos de varios MB). */
-    function arrayBufferToBase64(buffer) {
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      const chunkSize = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-      }
-      return btoa(binary);
-    }
-
-    function loadImageElement(src) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('No se pudo decodificar la imagen'));
-        img.src = src;
-      });
-    }
-
 
     /* Normaliza el nombre de archivo elegido por el usuario (Requerimiento #1) */
     function resolveOutputFilename() {
@@ -243,13 +187,13 @@
 
     /* ═══════════════════════════════════════════════
        DESHACER / REHACER (Ctrl+Z / Ctrl+Y)
-       Cubre reordenar, eliminar, rotar y espejar — cualquier acción que
-       cambie el orden de pageRegistry o el rotation/mirrorH/mirrorV de una
-       hoja. Cada entrada del historial guarda REFERENCIAS a los mismos
-       objetos de pageRegistry (no copias de sus datos pesados como el
-       thumb), así que deshacer una eliminación no necesita volver a leer
-       el archivo original — el objeto de esa hoja nunca se destruyó,
-       solo se sacó del array. ═══════════════════════════════════════════════ */
+       Cubre reordenar, eliminar y rotar — cualquier acción que cambie el
+       orden de pageRegistry o el rotation de una hoja. Cada entrada del
+       historial guarda REFERENCIAS a los mismos objetos de pageRegistry (no
+       copias de sus datos pesados como el thumb), así que deshacer una
+       eliminación no necesita volver a leer el archivo original — el
+       objeto de esa hoja nunca se destruyó, solo se sacó del array.
+       ═══════════════════════════════════════════════ */
     const btnUndo = document.getElementById('btn-undo');
     const btnRedo = document.getElementById('btn-redo');
     let undoStack = [];
@@ -257,11 +201,11 @@
     const UNDO_CAP = 30;
 
     function snapshotRegistry() {
-      return pageRegistry.map(r => ({ ref: r, rotation: r.rotation, mirrorH: r.mirrorH, mirrorV: r.mirrorV }));
+      return pageRegistry.map(r => ({ ref: r, rotation: r.rotation }));
     }
 
     function signatureOf(snapshot) {
-      return snapshot.map(e => e.ref.id + ':' + e.rotation + ':' + (e.mirrorH ? 1 : 0) + ':' + (e.mirrorV ? 1 : 0)).join('|');
+      return snapshot.map(e => e.ref.id + ':' + e.rotation).join('|');
     }
 
     function updateUndoRedoUI() {
@@ -270,10 +214,10 @@
     }
 
     /* Envuelve cualquier acción que mute pageRegistry (reordenar, eliminar,
-       rotar, espejar): guarda el estado ANTES de ejecutarla y, si algo
-       realmente cambió, lo agrega al historial. Si la acción termina sin
-       cambiar nada (ej. "Forzar Vertical" sobre hojas que ya estaban
-       verticales), no se ensucia el historial con un paso inútil. */
+       rotar): guarda el estado ANTES de ejecutarla y, si algo realmente
+       cambió, lo agrega al historial. Si la acción termina sin cambiar nada
+       (ej. "Forzar Vertical" sobre hojas que ya estaban verticales), no se
+       ensucia el historial con un paso inútil. */
     function withUndo(mutatorFn) {
       const before = snapshotRegistry();
       mutatorFn();
@@ -288,17 +232,14 @@
 
     /* Libera del mapa de datos fuente cualquier archivo que ya no esté
        referenciado ni por el workspace actual ni por el historial de
-       deshacer/rehacer — reemplaza al viejo "limpiar todo cuando el
-       workspace queda vacío", que hubiera borrado el buffer original de
-       una hoja que el usuario todavía podía traer de vuelta con Ctrl+Z. */
+       deshacer/rehacer — así vaciar el workspace y luego presionar Ctrl+Z
+       nunca intenta regenerar el PDF a partir de un buffer que ya no existe. */
     function pruneUnreferencedFileData() {
       const live = new Set();
       pageRegistry.forEach(r => live.add(r.fileId));
       undoStack.forEach(snap => snap.forEach(e => live.add(e.ref.fileId)));
       redoStack.forEach(snap => snap.forEach(e => live.add(e.ref.fileId)));
-      [pdfDocumentsData, wordDocumentsData, imageDocumentsData].forEach(map => {
-        Array.from(map.keys()).forEach(key => { if (!live.has(key)) map.delete(key); });
-      });
+      Array.from(pdfDocumentsData.keys()).forEach(key => { if (!live.has(key)) pdfDocumentsData.delete(key); });
     }
 
     function rebuildWorkspaceFromRegistry() {
@@ -342,8 +283,6 @@
     function restoreSnapshot(snapshot) {
       pageRegistry = snapshot.map(e => {
         e.ref.rotation = e.rotation;
-        e.ref.mirrorH = e.mirrorH;
-        e.ref.mirrorV = e.mirrorV;
         return e.ref;
       });
       rebuildWorkspaceFromRegistry();
@@ -402,7 +341,7 @@
         delayOnTouchOnly: true,
         touchStartThreshold: 3,
         // Evita iniciar un arrastre cuando el usuario hace clic en las
-        // herramientas de rotación/espejo o en el botón de eliminar.
+        // herramientas de rotación o en el botón de eliminar.
         filter: '.card-tool, .btn-delete-page, .btn-ungroup',
         preventOnFilter: true,
 
@@ -510,7 +449,7 @@
     }
 
     /* ═══════════════════════════════════════════════
-       ROTACIÓN / ESPEJO — Requerimiento #2
+       ROTACIÓN — Requerimiento #2
        ═══════════════════════════════════════════════ */
 
     function getTransformScope() {
@@ -545,9 +484,8 @@
     const pageCountBadge     = document.getElementById('page-count-badge');
     let pageCountBadgeTimer  = null;
 
-    /* Cuadro flotante con el total de páginas — Requerimiento: mostrarlo
-       "por lo menos 3-5 segundos" cada vez que cambia (al cargar Y al
-       eliminar hojas, no solo al cargar). */
+    /* Cuadro flotante con el total de páginas — visible unos segundos cada
+       vez que cambia (al cargar y al eliminar hojas). */
     function flashPageCountBadge() {
       if (!pageCountBadge) return;
       const count = pageRegistry.filter(p => !p.isFailed).length;
@@ -590,9 +528,9 @@
 
     if (chkTodas) chkTodas.addEventListener('change', updateSelectionUI);
 
-    /* ── FORZAR VERTICAL / HORIZONTAL (Fix: acción absoluta e idempotente,
-       no daña hojas que ya están en la orientación deseada — a diferencia
-       de "rotar", que siempre suma 90° sin importar el estado actual) ── */
+    /* ── FORZAR VERTICAL / HORIZONTAL (acción absoluta e idempotente, no
+       daña hojas que ya están en la orientación deseada — a diferencia de
+       "rotar", que siempre suma 90° sin importar el estado actual) ── */
     function effectiveOrientation(record) {
       const swapped = (record.rotation === 90 || record.rotation === 270);
       const base = record.baseOrientation || 'vertical';
@@ -643,7 +581,7 @@
     if (btnForceVertical) btnForceVertical.addEventListener('click', () => forceOrientation('vertical'));
     if (btnForceHorizontal) btnForceHorizontal.addEventListener('click', () => forceOrientation('horizontal'));
 
-    /* Aplica la transformación visual (CSS) + la guarda en el registro de datos.
+    /* Aplica la rotación visual (CSS) + la guarda en el registro de datos.
        `explicitIds`: si se pasa (usado por el modal), ignora resolveTargetIds
        y aplica exactamente a esos ids — así el modal decide su propio alcance
        (una sola hoja o "todas") sin depender del estado de selección de la
@@ -657,8 +595,6 @@
           if (!record || record.isFailed) return;
 
           record.rotation = record.rotation || 0;
-          record.mirrorH  = !!record.mirrorH;
-          record.mirrorV  = !!record.mirrorV;
 
           switch (action) {
             case 'rotate-cw':
@@ -666,12 +602,6 @@
               break;
             case 'rotate-ccw':
               record.rotation = (record.rotation + 270) % 360;
-              break;
-            case 'mirror-h':
-              record.mirrorH = !record.mirrorH;
-              break;
-            case 'mirror-v':
-              record.mirrorV = !record.mirrorV;
               break;
           }
 
@@ -685,7 +615,7 @@
       }
     }
 
-    /* Refleja rotation/mirrorH/mirrorV en el <img> de la tarjeta (vista previa) */
+    /* Refleja rotation en el <img> de la tarjeta (vista previa) */
     function renderCardTransform(id) {
       const record = pageRegistry.find(p => p.id === id);
       if (!record) return;
@@ -694,24 +624,17 @@
       const img = card.querySelector('.page-image');
       if (!img) return;
 
-      const sx = record.mirrorH ? -1 : 1;
-      const sy = record.mirrorV ? -1 : 1;
-      img.style.transform = 'rotate(' + (record.rotation || 0) + 'deg) scale(' + sx + ',' + sy + ')';
+      img.style.transform = 'rotate(' + (record.rotation || 0) + 'deg)';
 
-      // Indicador discreto de que la hoja tiene transformación activa
+      // Indicador discreto de que la hoja tiene rotación activa
       let indicator = card.querySelector('.transform-indicator');
-      const hasTransform = (record.rotation && record.rotation !== 0) || record.mirrorH || record.mirrorV;
-      if (hasTransform) {
+      if (record.rotation) {
         if (!indicator) {
           indicator = document.createElement('span');
           indicator.className = 'transform-indicator';
           card.appendChild(indicator);
         }
-        const parts = [];
-        if (record.rotation) parts.push(record.rotation + '°');
-        if (record.mirrorH) parts.push('⇋');
-        if (record.mirrorV) parts.push('⇵');
-        indicator.textContent = parts.join(' ');
+        indicator.textContent = record.rotation + '°';
       } else if (indicator) {
         indicator.remove();
       }
@@ -719,18 +642,12 @@
 
     function buildCardToolsHTML() {
       return (
-        '<div class="card-tools" role="group" aria-label="Rotar y espejar página">' +
+        '<div class="card-tools" role="group" aria-label="Rotar página">' +
           '<button type="button" class="card-tool" data-action="rotate-ccw" title="Rotar 90° a la izquierda" aria-label="Rotar 90° a la izquierda">' +
             '<svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 1 1 1.5 8.5M4 9V4M4 9h5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
           '</button>' +
           '<button type="button" class="card-tool" data-action="rotate-cw" title="Rotar 90° a la derecha" aria-label="Rotar 90° a la derecha">' +
             '<svg viewBox="0 0 24 24"><path d="M20 9a8 8 0 1 0-1.5 8.5M20 9V4M20 9h-5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          '</button>' +
-          '<button type="button" class="card-tool" data-action="mirror-h" title="Espejo horizontal" aria-label="Espejo horizontal">' +
-            '<svg viewBox="0 0 24 24"><path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-          '</button>' +
-          '<button type="button" class="card-tool" data-action="mirror-v" title="Espejo vertical" aria-label="Espejo vertical">' +
-            '<svg viewBox="0 0 24 24"><path d="M3 12h18M8 6l4-3 4 3M8 18l4 3 4-3" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
           '</button>' +
         '</div>'
       );
@@ -800,27 +717,9 @@
     }
 
     /* Genera (o reutiliza de la caché de esta sesión) una versión en alta
-       resolución de la página. Las páginas de Word ya se generaron a buena
-       resolución desde su origen, así que se usa su miniatura tal cual. */
+       resolución de la página, renderizada directo del PDF fuente. */
     async function getHighResImage(record) {
-      if (record.isWord) return record.thumb;
       if (modalHighResCache.has(record.id)) return modalHighResCache.get(record.id);
-
-      if (record.isImage) {
-        // A diferencia de la miniatura (recomprimida y achicada para la
-        // tarjeta), aquí se sirve el archivo ORIGINAL tal como se subió —
-        // el zoom debe mostrar el detalle real, no una versión degradada.
-        const entry = imageDocumentsData.get(record.fileId);
-        const dataUrl = entry
-          ? 'data:' + entry.mimeType + ';base64,' + arrayBufferToBase64(entry.buffer)
-          : record.thumb;
-        modalHighResCache.set(record.id, dataUrl);
-        if (modalHighResCache.size > HIGH_RES_CACHE_CAP) {
-          const oldestKey = modalHighResCache.keys().next().value;
-          modalHighResCache.delete(oldestKey);
-        }
-        return dataUrl;
-      }
 
       let pdfDoc = modalPdfDocCache.get(record.fileId);
       if (!pdfDoc) {
@@ -854,20 +753,18 @@
     }
 
     /* Zoom con doble clic — Requerimiento: "opción de zoom al doble click".
-       Compone rotación/espejo (ya existentes) con un escalado + desplazamiento
+       Compone la rotación (ya existente) con un escalado + desplazamiento
        de zoom. El translate va PRIMERO (en píxeles de pantalla) para que el
        arrastre se sienta natural sin importar cómo esté rotada la hoja. */
     function applyModalImageTransform(record) {
       if (!modalImage || !record) return;
-      const sx = record.mirrorH ? -1 : 1;
-      const sy = record.mirrorV ? -1 : 1;
       const rot = record.rotation || 0;
       const zoomScale = modalZoomState.zoomed ? MODAL_ZOOM_SCALE : 1;
 
       modalImage.style.transform =
         'translate(' + modalZoomState.tx + 'px,' + modalZoomState.ty + 'px) ' +
         'scale(' + zoomScale + ') ' +
-        'rotate(' + rot + 'deg) scale(' + sx + ',' + sy + ')';
+        'rotate(' + rot + 'deg)';
 
       modalImage.classList.toggle('zoomable', !modalZoomState.zoomed);
       modalImage.classList.toggle('zoomed', modalZoomState.zoomed);
@@ -899,8 +796,7 @@
       // Zoom hacia el PUNTO donde se hizo doble clic (no siempre al centro):
       // así se puede acercar cualquier esquina o borde de la hoja de
       // inmediato, sin depender de que el usuario descubra que además se
-      // puede arrastrar para reencuadrar — Fix: "solo se enfoca en un lado
-      // sin poder mover y observar otras partes".
+      // puede arrastrar para reencuadrar.
       modalImage.addEventListener('dblclick', (e) => {
         e.preventDefault();
         if (!modalZoomState.zoomed && modalImageWrap) {
@@ -945,11 +841,7 @@
     }
 
     // Desplazamiento con rueda del mouse / gesto de dos dedos en trackpad,
-    // mientras está en zoom — Fix: "se hace difícil poder movilizarse
-    // mediante el documento ya ampliado". El arrastre con clic sigue
-    // funcionando, pero mover el scroll/trackpad es más natural e
-    // inmediato para explorar una hoja ampliada sin tener que "encontrar"
-    // el gesto de arrastre.
+    // mientras está en zoom.
     if (modalImageWrap) {
       modalImageWrap.addEventListener('wheel', (e) => {
         if (!modalZoomState.zoomed) return;
@@ -984,9 +876,8 @@
         modalImageWrap.style.aspectRatio = w + ' / ' + h;
       }
 
-      // Cada render (abrir, navegar, rotar/espejar) parte con el zoom
-      // reiniciado — evita combinaciones raras de zoom heredado de una
-      // hoja distinta o de un estado de rotación anterior.
+      // Cada render (abrir, navegar, rotar) parte con el zoom reiniciado —
+      // evita combinaciones raras de zoom heredado de una hoja distinta.
       resetModalZoom();
       applyModalImageTransform(record);
 
@@ -1058,9 +949,6 @@
     function createCardInDOM(data) {
       const card = document.createElement('div');
       card.className = 'page-card';
-      if (data.isWord) card.classList.add('word-page');
-      else if (data.isImage) card.classList.add('image-page');
-      else card.classList.add('pdf-page');
       card.dataset.id = data.id;
       card.dataset.fileId = data.fileId;
       card.dataset.pageIndex = data.pageIndex;
@@ -1128,9 +1016,8 @@
         if (modalState.currentId && !pageRegistry.find(p => p.id === modalState.currentId)) {
           closeModal();
         }
-        // Fix (deshacer eliminaba el archivo original de la hoja): ya no se
-        // limpia el buffer fuente de golpe al vaciar el workspace — se
-        // libera solo lo que ya no referencia ni el workspace ni el
+        // Ya no se limpia el buffer fuente de golpe al vaciar el workspace —
+        // se libera solo lo que ya no referencia ni el workspace ni el
         // historial de deshacer/rehacer (ver pruneUnreferencedFileData).
         pruneUnreferencedFileData();
         updateSelectionUI();
@@ -1144,27 +1031,10 @@
       const img = document.createElement('img');
       img.className = 'page-image';
       img.src = data.thumb;
-      img.setAttribute('alt', data.isImage ? 'Imagen ' + (data.pageIndex + 1) : data.isWord ? 'Hoja Word ' + (data.pageIndex + 1) : 'Página PDF ' + (data.pageIndex + 1));
+      img.setAttribute('alt', 'Página ' + (data.pageIndex + 1));
       frame.appendChild(img);
 
-      if (data.isWord) {
-        const wordBadge = document.createElement('span');
-        wordBadge.className = 'word-badge';
-        wordBadge.textContent = 'W';
-        card.appendChild(wordBadge);
-      } else if (data.isImage) {
-        const imageBadge = document.createElement('span');
-        imageBadge.className = 'image-badge';
-        imageBadge.textContent = 'IMG';
-        card.appendChild(imageBadge);
-      } else {
-        const pdfBadge = document.createElement('span');
-        pdfBadge.className = 'pdf-badge';
-        pdfBadge.textContent = 'PDF';
-        card.appendChild(pdfBadge);
-      }
-
-      // Herramientas de rotación/espejo (Requerimiento #2)
+      // Herramientas de rotación (Requerimiento #2)
       const toolsWrapper = document.createElement('div');
       toolsWrapper.innerHTML = buildCardToolsHTML();
       const toolsEl = toolsWrapper.firstElementChild;
@@ -1212,8 +1082,6 @@
         fileId,
         pageIndex: pageIdx,
         rotation: 0,
-        mirrorH: false,
-        mirrorV: false,
         thumb: null,
         isFailed: true,
         reason
@@ -1285,7 +1153,7 @@
       const toolsWrapper = document.createElement('div');
       toolsWrapper.innerHTML = buildCardToolsHTML();
       const toolsEl = toolsWrapper.firstElementChild;
-      toolsEl.setAttribute('aria-label', 'Rotar y espejar el bloque completo');
+      toolsEl.setAttribute('aria-label', 'Rotar el bloque completo');
       toolsEl.querySelectorAll('.card-tool').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1503,7 +1371,7 @@
         const rangeCount = toPage - fromPage + 1;
 
         for (let i = fromPage; i <= toPage; i++) {
-          // Fix #7: límite duro de páginas totales para proteger la memoria del navegador
+          // Límite duro de páginas totales para proteger la memoria del navegador
           if (pageRegistry.length >= MAX_TOTAL_PAGES) {
             showToast('Se alcanzó el límite de ' + MAX_TOTAL_PAGES + ' páginas. El resto de "' + file.name + '" no se cargó.', 'warning');
             break;
@@ -1526,16 +1394,13 @@
               fileId,
               pageIndex: i - 1,
               rotation: 0,
-              mirrorH: false,
-              mirrorV: false,
               baseOrientation: viewport.width > viewport.height ? 'horizontal' : 'vertical',
               // Proporción real de la hoja (la ratio es la misma a cualquier
               // escala, así que se reutiliza el viewport ya calculado sin
               // costo extra) — usada para dimensionar el marco del modal.
               nativeWidth: viewport.width,
               nativeHeight: viewport.height,
-              thumb: canvas.toDataURL('image/jpeg', 0.5),
-              isWord: false
+              thumb: canvas.toDataURL('image/jpeg', 0.5)
             };
             pageRegistry.push(nodeData);
             createCardInDOM(nodeData);
@@ -1557,510 +1422,6 @@
     }
 
     /* ═══════════════════════════════════════════════
-       PARTIR HOJAS WORD QUE DESBORDAN UNA PÁGINA
-       docx-preview solo corta una hoja nueva cuando el propio
-       .docx trae esa información (salto de página manual, o el
-       marcador "lastRenderedPageBreak" que Word graba la última
-       vez que el archivo se abrió/imprimió allí — se le pide
-       explícitamente que lo use, ver processWord). Un documento
-       generado por script, o nunca abierto en Word tras su
-       última edición, puede no traer esa marca: en ese caso
-       docx-preview entrega UNA sola sección que simplemente
-       crece más allá de una hoja, en vez de partirse.
-       Esta función detecta ese desborde y reparte el contenido
-       YA renderizado (sin tocar una sola letra ni estilo) en
-       tantas hojas como haga falta, midiendo la altura real de
-       cada párrafo/tabla — el mismo método de "altura acumulada"
-       ya usado y probado en versiones anteriores de esta app,
-       aplicado ahora sobre el HTML fiel de docx-preview en vez
-       del HTML simplificado que entregaba mammoth.js. ═══════════════════════════════════════════════ */
-    function splitOverflowingDocxSections(container) {
-      const sections = Array.from(container.querySelectorAll(':scope > section.docx'));
-      const finalSections = [];
-
-      sections.forEach(section => {
-        const article = section.querySelector(':scope > article');
-        if (!article) { finalSections.push(section); return; }
-
-        const cs = getComputedStyle(section);
-        const paddingTop = parseFloat(cs.paddingTop) || 0;
-        const paddingBottom = parseFloat(cs.paddingBottom) || 0;
-        const nominalPageHeightPx = parseFloat(cs.minHeight) || section.offsetHeight;
-        const contentBudgetPx = nominalPageHeightPx - paddingTop - paddingBottom;
-
-        const children = Array.from(article.childNodes).filter(n =>
-          n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim().length > 0)
-        );
-
-        let acc = 0;
-        const pagesNodes = [[]];
-        children.forEach(node => {
-          const h = (node.nodeType === 1 && typeof node.offsetHeight === 'number') ? node.offsetHeight : 18;
-          if (acc + h > contentBudgetPx && pagesNodes[pagesNodes.length - 1].length > 0) {
-            pagesNodes.push([]);
-            acc = 0;
-          }
-          pagesNodes[pagesNodes.length - 1].push(node);
-          acc += h;
-        });
-
-        if (pagesNodes.length <= 1) { finalSections.push(section); return; }
-
-        // El encabezado/pie de página (si el documento tiene) se repite
-        // igual en cada hoja nueva — así es como Word los muestra.
-        const header = section.querySelector(':scope > header');
-        const footer = section.querySelector(':scope > footer');
-
-        pagesNodes.forEach(nodesForPage => {
-          const newSection = section.cloneNode(false); // copia clase + tamaño/margen reales, sin hijos
-          if (header) newSection.appendChild(header.cloneNode(true));
-          const newArticle = article.cloneNode(false);
-          nodesForPage.forEach(n => newArticle.appendChild(n.cloneNode(true)));
-          newSection.appendChild(newArticle);
-          if (footer) newSection.appendChild(footer.cloneNode(true));
-          container.insertBefore(newSection, section);
-          finalSections.push(newSection);
-        });
-        section.remove();
-      });
-
-      return finalSections;
-    }
-
-    /* Espera a que cada <img> de la hoja Word termine de intentar decodificar
-       (cargó bien, o falló) y reemplaza cualquiera que NO haya podido
-       decodificarse por un aviso visible del mismo tamaño, en vez de dejarla
-       desaparecer en silencio. Causa real confirmada: algunas imágenes
-       incrustadas en Word usan formatos que NINGÚN navegador sabe mostrar
-       (el caso típico: WMF/EMF, muy común en logos o "cuadros" pegados hace
-       años en plantillas institucionales) — el <img> nunca se pinta, pero
-       tampoco lanza ningún error que la app pudiera atrapar antes de esto,
-       así que la hoja se daba por exitosa con esa imagen (o el "cuadro" que
-       en realidad era una imagen) simplemente ausente. Devuelve cuántas
-       imágenes rotas encontró, para poder avisarle al usuario. */
-    async function waitForImagesAndMarkBroken(container, timeoutMs) {
-      const imgs = Array.from(container.querySelectorAll('img'));
-      if (imgs.length === 0) return 0;
-
-      await Promise.all(imgs.map(img => {
-        if (img.complete) return Promise.resolve();
-        return Promise.race([
-          new Promise(resolve => {
-            img.addEventListener('load', resolve, { once: true });
-            img.addEventListener('error', resolve, { once: true });
-          }),
-          new Promise(resolve => setTimeout(resolve, timeoutMs))
-        ]);
-      }));
-
-      let brokenCount = 0;
-      imgs.forEach(img => {
-        if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-          brokenCount++;
-          const rect = img.getBoundingClientRect();
-          const w = Math.max(60, img.width || rect.width || 160);
-          const h = Math.max(30, img.height || rect.height || 90);
-          const placeholder = document.createElement('div');
-          placeholder.style.cssText =
-            'display:inline-block;box-sizing:border-box;width:' + w + 'px;height:' + h + 'px;' +
-            'border:2px dashed #c0392b;background:#fdecea;color:#a12a20;font-size:10px;' +
-            'line-height:1.3;text-align:center;padding:4px;overflow:hidden;' +
-            'font-family:Arial,sans-serif;vertical-align:middle;';
-          placeholder.textContent = 'IMAGEN NO COMPATIBLE — formato no soportado por el navegador (ej. WMF/EMF). Reinsértela como PNG/JPG en Word.';
-          if (img.parentNode) img.parentNode.replaceChild(placeholder, img);
-        }
-      });
-      return brokenCount;
-    }
-
-    /* Marca de forma visible cualquier objeto incrustado que docx-preview no
-       sabe dibujar — la causa real, confirmada con una reproducción exacta,
-       de "cuadros"/gráficos que desaparecían en silencio (a diferencia de
-       las imágenes rotas, que sí dejan un <img>, esto ni siquiera eso: el
-       hueco queda del tamaño correcto pero completamente vacío). docx-preview
-       solo sabe dibujar IMÁGENES (pic:pic) dentro de un <w:drawing> — un
-       GRÁFICO nativo de Word/Excel (creado con datos, no pegado como una
-       simple imagen), un SmartArt, una forma de texto u otro objeto
-       incrustado se procesan igual por dentro (se calcula y se reserva su
-       tamaño real), pero como no hay motor para "dibujarlos", el contenedor
-       queda vacío — ni un error, ni un aviso, solo un espacio en blanco del
-       tamaño exacto que debía ocupar el gráfico. Cada objeto de este tipo
-       se envuelve siempre en el mismo contenedor
-       (display:inline-block;position:relative), así que un <div> con esa
-       combinación exacta y CERO contenido dentro es, por descarte, uno de
-       estos objetos no soportados. */
-    function markUnsupportedDrawings(container) {
-      const candidates = Array.from(container.querySelectorAll('div')).filter(div =>
-        div.style.display === 'inline-block' &&
-        div.style.position === 'relative' &&
-        div.children.length === 0 &&
-        !div.textContent.trim()
-      );
-      candidates.forEach(div => {
-        div.style.cssText +=
-          ';border:2px dashed #c0392b;background:#fdecea;color:#a12a20;font-size:10px;' +
-          'line-height:1.3;text-align:center;box-sizing:border-box;padding:4px;overflow:hidden;' +
-          'font-family:Arial,sans-serif;vertical-align:middle;';
-        div.textContent = 'OBJETO NO COMPATIBLE — gráfico/SmartArt/objeto incrustado que el navegador no puede mostrar. En Word: clic derecho sobre él → "Guardar como imagen" (o "Convertir en imagen") y reinsértelo como PNG/JPG.';
-      });
-      return candidates.length;
-    }
-
-    /* ═══════════════════════════════════════════════
-       PROCESAR WORD (DOCX) → renderizar como imagen
-       Motor: docx-preview (reemplaza a mammoth.js). mammoth
-       convierte el .docx a HTML "limpio" y por diseño DESCARTA
-       la alineación/color/tamaño de fuente puestos a mano si no
-       vienen de un estilo con nombre — la causa raíz, confirmada
-       con evidencia, del reclamo recurrente de "se altera el
-       formato/data de Word" (ver CAMBIOS.md, Ronda 7). docx-preview
-       en cambio lee el XML del .docx igual que lo hace Word al
-       abrirlo, y aplica cada propiedad de párrafo/carácter tal
-       cual está en el archivo — manual o de un estilo, da igual —
-       nada se "limpia" ni se pierde. Además entrega el tamaño y
-       los márgenes REALES de cada hoja (de su w:pgSz/w:pgMar), así
-       que ya no hace falta inventar un margen propio ni forzar A4:
-       la hoja final es exactamente la del documento original.
-       ═══════════════════════════════════════════════ */
-    async function processWord(file, fileId, buffer) {
-      if (!isValidDOCX(buffer)) {
-        showToast('El archivo "' + file.name + '" no es un DOCX válido.', 'error');
-        return;
-      }
-      if (!DOCXPREVIEW_OK) {
-        showToast('Librería docx-preview no disponible. No se puede procesar Word.', 'error');
-        return;
-      }
-      // Fix #4: si html2canvas no cargó, se aborta ANTES de generar nada,
-      // en vez de crear hojas en blanco silenciosas.
-      if (!HTML2CANVAS_OK) {
-        showToast('html2canvas no disponible: "' + file.name + '" no se procesó (se habría generado en blanco).', 'error');
-        return;
-      }
-
-      // Contenedores de renderizado fuera de pantalla, con "position:fixed"
-      // para sacarlos por completo del flujo de <body> (que usa
-      // display:flex para centrar la tarjeta principal de la app). Sin
-      // esto, cualquier hijo directo de body puede ser encogido por el
-      // layout flex sin importar su ancho fijo — la causa confirmada de un
-      // bug grave anterior ("contenido pegado a la izquierda, A4 perdido",
-      // ver CAMBIOS.md Ronda 8). El mismo truco ya usado ahí se reaplica aquí.
-      const renderContainer = document.createElement('div');
-      renderContainer.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
-      const styleContainer = document.createElement('div');
-      styleContainer.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
-      document.body.appendChild(renderContainer);
-      document.body.appendChild(styleContainer);
-
-      try {
-        await docx.renderAsync(buffer, renderContainer, styleContainer, {
-          inWrapper: false,                    // sin el fondo gris de "vista previa": cada hoja es su propia sección
-          breakPages: true,
-          ignoreLastRenderedPageBreak: false,   // usa el paginado real de Word cuando el archivo lo trae
-          experimental: true,                   // posición exacta de tabulaciones
-          renderHeaders: true,
-          renderFooters: true,
-          renderFootnotes: true,
-          renderEndnotes: true,
-          useBase64URL: true,                   // imágenes ya incrustadas como data: — sin esperas de red
-          className: 'docx',
-        });
-
-        // "experimental" reajusta las tabulaciones en un setTimeout interno
-        // de 500ms que renderAsync no espera — sin este margen, una hoja
-        // con tabulaciones se capturaría antes de que terminen de reubicarse.
-        await new Promise(r => setTimeout(r, 650));
-        if (document.fonts && document.fonts.ready) {
-          await Promise.race([document.fonts.ready.catch(() => {}), new Promise(r => setTimeout(r, 1500))]);
-        }
-
-        // Fix (imágenes/"cuadros" que desaparecían en silencio): antes de
-        // capturar nada, se detecta y se marca visiblemente cualquier
-        // imagen que el navegador no pudo decodificar — ver el comentario
-        // junto a waitForImagesAndMarkBroken.
-        const brokenImageCount = await waitForImagesAndMarkBroken(renderContainer, 4000);
-        if (brokenImageCount > 0) {
-          showToast(
-            '⚠️ "' + file.name + '" trae ' + brokenImageCount + ' imagen(es) en un formato que el navegador no puede mostrar (común en imágenes antiguas tipo WMF/EMF). Quedaron marcadas en el PDF — ábralas en Word, guárdelas como PNG/JPG y vuelva a insertarlas.',
-            'warning'
-          );
-        }
-
-        // Fix (gráficos/"cuadros" y otros objetos incrustados que
-        // desaparecían en silencio): ver el comentario junto a
-        // markUnsupportedDrawings — a diferencia de una imagen rota, estos
-        // ni siquiera dejan un <img>, así que necesitan su propia detección.
-        const unsupportedDrawingCount = markUnsupportedDrawings(renderContainer);
-        if (unsupportedDrawingCount > 0) {
-          showToast(
-            '⚠️ "' + file.name + '" trae ' + unsupportedDrawingCount + ' gráfico(s)/objeto(s) incrustado(s) (ej. un gráfico nativo de Excel/Word, SmartArt) que el navegador no puede mostrar. Quedaron marcados en el PDF — en Word, clic derecho sobre cada uno → "Guardar como imagen", y reinsértelos como PNG/JPG.',
-            'warning'
-          );
-        }
-
-        const pageSections = splitOverflowingDocxSections(renderContainer);
-
-        if (pageSections.length === 0) {
-          showToast('El documento "' + file.name + '" está vacío o no se pudo paginar.', 'warning');
-          return;
-        }
-
-        for (let p = 0; p < pageSections.length; p++) {
-          if (pageRegistry.length >= MAX_TOTAL_PAGES) {
-            showToast('Se alcanzó el límite de ' + MAX_TOTAL_PAGES + ' páginas. El resto de "' + file.name + '" no se cargó.', 'warning');
-            break;
-          }
-          updateProgress(p + 1, pageSections.length);
-
-          const sectionEl = pageSections[p];
-          // Tamaño REAL de esta hoja (ancho/alto en puntos), leído directo
-          // del estilo que docx-preview calculó a partir de w:pgSz — nunca
-          // se fuerza a A4: si el documento define otro tamaño, se respeta.
-          const pageWpt = parseFloat(sectionEl.style.width) || 595.28;
-          const pageHpt = parseFloat(sectionEl.style.minHeight) || 841.89;
-
-          try {
-            const canvas = await html2canvas(sectionEl, { scale: 2.5, useCORS: true, logging: false });
-            const pageId = fileId + '_w_' + (p + 1);
-            const nodeData = {
-              id: pageId,
-              fileId,
-              pageIndex: p,
-              rotation: 0,
-              mirrorH: false,
-              mirrorV: false,
-              baseOrientation: pageWpt > pageHpt ? 'horizontal' : 'vertical',
-              nativeWidth: pageWpt,
-              nativeHeight: pageHpt,
-              thumb: canvas.toDataURL('image/jpeg', 0.88),
-              isWord: true
-            };
-            pageRegistry.push(nodeData);
-            createCardInDOM(nodeData);
-            canvas.width = 0;
-          } catch (e) {
-            console.error('Error al capturar hoja Word ' + (p + 1), e);
-            createFailedCard(fileId, p, 'Word pág ' + (p + 1));
-          }
-        }
-      } catch (err) {
-        console.error('Error Word:', err);
-        showToast('Error al procesar: ' + file.name, 'error');
-      } finally {
-        document.body.removeChild(renderContainer);
-        document.body.removeChild(styleContainer);
-      }
-    }
-
-    /* ═══════════════════════════════════════════════
-       PROCESAR IMAGEN (PNG/JPG/WEBP/GIF) → una hoja, tal cual
-       ═══════════════════════════════════════════════
-       A diferencia de Word (que compone su contenido dentro de un A4 con
-       márgenes), una imagen suelta se trata como una hoja escaneada: se
-       preserva su propia proporción, y en el PDF final ocupa toda la hoja
-       (sin recortar ni forzar A4) — así una foto o un escaneo apaisado no
-       sale distorsionado ni con bordes blancos artificiales.
-       PNG/JPG se incrustan con sus bytes originales, tal cual. WEBP/GIF el
-       navegador SÍ los decodifica, pero pdf-lib no tiene un embedWebp/
-       embedGif propio — se recomponen a PNG (sin pérdida de lo que el
-       navegador ya decodificó, mismos píxeles) y esa versión reemplaza al
-       buffer en imageDocumentsData, avisando siempre por qué. */
-    async function processImage(file, fileId, buffer, kind) {
-      const mimeType = kind === 'png' ? 'image/png' : kind === 'jpeg' ? 'image/jpeg' : kind === 'webp' ? 'image/webp' : 'image/gif';
-
-      if (pageRegistry.length >= MAX_TOTAL_PAGES) {
-        showToast('Ya alcanzaste el límite de ' + MAX_TOTAL_PAGES + ' páginas en el workspace.', 'error');
-        return;
-      }
-
-      const blob = new Blob([buffer], { type: mimeType });
-      const objectUrl = URL.createObjectURL(blob);
-      try {
-        const img = await loadImageElement(objectUrl);
-        const pxW = img.naturalWidth, pxH = img.naturalHeight;
-        if (!pxW || !pxH) throw new Error('Dimensiones de imagen inválidas');
-
-        if (kind === 'webp' || kind === 'gif') {
-          const fullCanvas = document.createElement('canvas');
-          fullCanvas.width = pxW;
-          fullCanvas.height = pxH;
-          fullCanvas.getContext('2d').drawImage(img, 0, 0);
-          const pngBytes = await fetch(fullCanvas.toDataURL('image/png')).then(r => r.arrayBuffer());
-          imageDocumentsData.set(fileId, { buffer: pngBytes, name: file.name, mimeType: 'image/png' });
-          fullCanvas.width = 0;
-          showToast(
-            '"' + file.name + '" (' + kind.toUpperCase() + ') se recompuso a PNG sin pérdida de calidad para poder incrustarla en el PDF (esa librería no admite ' + kind.toUpperCase() + ' de forma nativa).' +
-            (kind === 'gif' ? ' Si el GIF es animado, en el PDF se usa solo su primer cuadro.' : ''),
-            'info'
-          );
-        }
-
-        // Conversión px → puntos PDF asumiendo ~96dpi (resolución típica de
-        // capturas/escaneos livianos). Si la imagen es muy grande (foto de
-        // celular de varios miles de px), se reescala para no generar una
-        // hoja del tamaño de un mural mientras se conserva la proporción.
-        const PT_PER_PX = 72 / 96;
-        let nativeWidth = pxW * PT_PER_PX;
-        let nativeHeight = pxH * PT_PER_PX;
-        const MAX_DIM = 1191; // ≈ lado mayor de A3 en puntos
-        if (Math.max(nativeWidth, nativeHeight) > MAX_DIM) {
-          const shrink = MAX_DIM / Math.max(nativeWidth, nativeHeight);
-          nativeWidth *= shrink;
-          nativeHeight *= shrink;
-        }
-
-        const thumbCanvas = document.createElement('canvas');
-        const thumbScale = Math.min(1, 320 / Math.max(pxW, pxH));
-        thumbCanvas.width = Math.max(1, Math.round(pxW * thumbScale));
-        thumbCanvas.height = Math.max(1, Math.round(pxH * thumbScale));
-        thumbCanvas.getContext('2d').drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height);
-
-        const pageId = fileId + '_img';
-        const nodeData = {
-          id: pageId,
-          fileId,
-          pageIndex: 0,
-          rotation: 0,
-          mirrorH: false,
-          mirrorV: false,
-          baseOrientation: nativeWidth > nativeHeight ? 'horizontal' : 'vertical',
-          nativeWidth,
-          nativeHeight,
-          // Miniatura liviana SOLO para la tarjeta/vista previa inicial — el
-          // PDF final y el zoom en el modal siempre usan el archivo ORIGINAL
-          // guardado en imageDocumentsData, nunca esta versión recomprimida.
-          thumb: thumbCanvas.toDataURL('image/jpeg', 0.72),
-          isWord: false,
-          isImage: true
-        };
-        pageRegistry.push(nodeData);
-        createCardInDOM(nodeData);
-        thumbCanvas.width = 0;
-      } catch (e) {
-        console.error('Error al procesar imagen ' + file.name, e);
-        showToast('No se pudo procesar la imagen "' + file.name + '".', 'error');
-        createFailedCard(fileId, 0, file.name.slice(0, 14));
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
-    }
-
-    /* ═══════════════════════════════════════════════
-       PROCESAR ARCHIVOS (PDF + DOCX + PNG/JPG)
-       ═══════════════════════════════════════════════ */
-    async function processFiles(files) {
-      const allFiles = Array.from(files);
-      const pdfs   = allFiles.filter(f => f.type === 'application/pdf'  || f.name.toLowerCase().endsWith('.pdf'));
-      const docxs  = allFiles.filter(f => f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || f.name.toLowerCase().endsWith('.docx'));
-      const images = allFiles.filter(f =>
-        /^image\/(png|jpeg|webp|gif|tiff)$/.test(f.type) || /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f.name)
-      );
-
-      // El .doc "clásico" (Word 97-2003) es un formato binario totalmente
-      // distinto al .docx (que es un .zip por dentro) — no hay forma
-      // confiable de leerlo en el navegador con las librerías que usa esta
-      // app. En vez de rechazarlo en silencio ("no admite" sin más
-      // explicación), se detecta puntualmente y se le dice al usuario
-      // exactamente qué hacer.
-      const legacyDocs = allFiles.filter(f => /\.doc$/i.test(f.name));
-      if (legacyDocs.length > 0) {
-        const nombres = legacyDocs.map(f => '"' + f.name + '"').join(', ');
-        showToast(
-          'Word 97-2003 (.doc) no es compatible: ' + nombres + '. Ábrelo en Word/LibreOffice/Google Docs y usa "Guardar como" → .docx, luego vuelve a intentarlo.',
-          'error'
-        );
-      }
-
-      if (pdfs.length === 0 && docxs.length === 0 && images.length === 0) {
-        if (legacyDocs.length === 0) {
-          showToast('Solo se aceptan PDF, DOCX, o imágenes PNG/JPG/WEBP/GIF.', 'warning');
-        }
-        return;
-      }
-
-      // Fix #7: aviso (no bloqueante) si el lote es muy pesado en bytes
-      const totalBytes = allFiles.reduce((acc, f) => acc + f.size, 0);
-      if (totalBytes > MAX_TOTAL_BYTES) {
-        showToast('El lote pesa más de ' + Math.round(MAX_TOTAL_BYTES / (1024 * 1024)) + 'MB. El navegador podría ir lento.', 'warning');
-      }
-
-      if (pageRegistry.length >= MAX_TOTAL_PAGES) {
-        showToast('Ya alcanzaste el límite de ' + MAX_TOTAL_PAGES + ' páginas en el workspace.', 'error');
-        return;
-      }
-
-      showLoader('Procesando archivos...', true);
-      btnGenerate.disabled = true;
-      const totalFiles = pdfs.length + docxs.length + images.length;
-      let processed = 0;
-
-      for (const file of pdfs) {
-        const fileId = generateId();
-        const buffer = await file.arrayBuffer();
-        pdfDocumentsData.set(fileId, { buffer, name: file.name });
-        await processPDF(file, fileId, buffer);
-        const newIds = pageRegistry.filter(r => r.fileId === fileId && !r.isFailed).map(r => r.id);
-        if (newIds.length > 1 && askKeepAsBlock(file.name, newIds.length)) {
-          wrapCardsIntoGroup(newIds, file.name);
-        }
-        processed++;
-        updateProgress(processed, totalFiles);
-      }
-
-      for (const file of docxs) {
-        const fileId = generateId();
-        const buffer = await file.arrayBuffer();
-        wordDocumentsData.set(fileId, { buffer, name: file.name });
-        await processWord(file, fileId, buffer);
-        const newIds = pageRegistry.filter(r => r.fileId === fileId && !r.isFailed).map(r => r.id);
-        if (newIds.length > 1 && askKeepAsBlock(file.name, newIds.length)) {
-          wrapCardsIntoGroup(newIds, file.name);
-        }
-        processed++;
-        updateProgress(processed, totalFiles);
-      }
-
-      for (const file of images) {
-        const fileId = generateId();
-        const buffer = await file.arrayBuffer();
-        const kind = detectImageType(buffer);
-        if (!kind) {
-          showToast('El archivo "' + file.name + '" no es una imagen PNG/JPG/WEBP/GIF válida.', 'error');
-          processed++;
-          updateProgress(processed, totalFiles);
-          continue;
-        }
-        // TIFF: ningún navegador lo decodifica de forma nativa (a
-        // diferencia de WEBP/GIF, que sí) — no hay forma confiable de
-        // procesarlo aquí. Mismo trato que ".doc": rechazo explícito con
-        // instrucción concreta, en vez de un fallo silencioso o genérico.
-        if (kind === 'tiff') {
-          showToast(
-            'TIFF no es compatible: "' + file.name + '". Ábrela en cualquier editor de imágenes y "Guardar como" → PNG o JPG, luego vuelve a intentarlo.',
-            'error'
-          );
-          processed++;
-          updateProgress(processed, totalFiles);
-          continue;
-        }
-        const mimeByKind = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
-        imageDocumentsData.set(fileId, { buffer, name: file.name, mimeType: mimeByKind[kind] });
-        await processImage(file, fileId, buffer, kind);
-        processed++;
-        updateProgress(processed, totalFiles);
-      }
-
-      btnGenerate.disabled = (pageRegistry.length === 0);
-      hideLoader();
-      fileInput.value = '';
-
-      if (pageRegistry.length > 0) {
-        showToast('Cargadas ' + pageRegistry.length + ' páginas. Organízalas y genera el PDF.', 'success');
-        flashPageCountBadge();
-      }
-    }
-
-    /* ═══════════════════════════════════════════════
        GEOMETRÍA: desplazamiento de pivote por rotación
        (deriva de cómo un /Rotate clockwise reubica las
        esquinas de la hoja; usado para "hornear" la
@@ -2075,43 +1436,25 @@
       return { x: 0, y: 0 };
     }
 
-    /* Rota (clockwise, igual convención que rot) un vector (a,b) */
-    function rotateVector(a, b, rot) {
-      if (rot === 90)  return { x: b, y: -a };
-      if (rot === 180) return { x: -a, y: -b };
-      if (rot === 270) return { x: -b, y: a };
-      return { x: a, y: b };
-    }
-
     /*
-      Dibuja `drawable` (imagen o página incrustada) sobre `page`, ya rotado
-      y espejado (combinables — Requerimiento #2), horneando la transformación
-      directamente en el contenido para que `page` NUNCA use /Rotate.
-      Esto es lo que permite que el foleo se dibuje siempre en el mismo punto
-      fijo (arriba-derecha) sin importar rot/mirror — Requerimiento #3.
+      Dibuja la página incrustada sobre `page`, ya rotada, horneando la
+      transformación directamente en el contenido para que `page` NUNCA use
+      /Rotate. Esto es lo que permite que el foleo se dibuje siempre en el
+      mismo punto fijo (arriba-derecha) sin importar la rotación —
+      Requerimiento #3.
     */
-    function drawTransformedContent(page, drawFn, contentW, contentH, rot, mirrorH, mirrorV) {
-      const rotateOffset = getRotateOffset(rot, contentW, contentH);
-
-      // Offset adicional por espejo, calculado en el marco LOCAL (antes de
-      // rotar) y luego rotado junto con el resto, para que espejo+rotación
-      // combinados no se desalineen entre sí.
-      const localMirrorOffsetX = mirrorH ? contentW : 0;
-      const localMirrorOffsetY = mirrorV ? contentH : 0;
-      const rotatedMirrorOffset = rotateVector(localMirrorOffsetX, localMirrorOffsetY, rot);
-
-      const finalX = rotateOffset.x + rotatedMirrorOffset.x;
-      const finalY = rotateOffset.y + rotatedMirrorOffset.y;
+    function drawTransformedContent(page, drawFn, contentW, contentH, rot) {
+      const offset = getRotateOffset(rot, contentW, contentH);
 
       // FIX (confirmado por prueba geométrica): pdf-lib rota en sentido
       // ANTIHORARIO para valores positivos (documentación oficial de pdf-lib).
       // Mis fórmulas de posición fueron derivadas para rotación física
       // HORARIA, así que se compensa invirtiendo el signo del ángulo.
       drawFn({
-        x: finalX,
-        y: finalY,
-        width: mirrorH ? -contentW : contentW,
-        height: mirrorV ? -contentH : contentH,
+        x: offset.x,
+        y: offset.y,
+        width: contentW,
+        height: contentH,
         rotate: PDFLib.degrees(-rot)
       });
     }
@@ -2161,13 +1504,14 @@
       showLoader('Compilando documento final...', true);
 
       try {
-        const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib;
+        const { PDFDocument, StandardFonts, rgb } = PDFLib;
         const finalPdf   = await PDFDocument.create();
         const loadedSrcDocs = new Map();
         // Fix de rendimiento: getPages() se calcula UNA sola vez por archivo
         // aquí, en vez de dentro del bucle por página (donde antes se repetía
         // una vez por cada página del documento final — un costo que crecía
-        // en O(n²) y se volvía notoriamente inestable pasado ~150-200 páginas).
+        // en O(n²) y se volvía notoriamente inestable pasado ~150-200 páginas,
+        // clave para poder sostener lotes de miles de páginas).
         const srcPagesCache = new Map();
 
         for (const [fileId, entry] of pdfDocumentsData.entries()) {
@@ -2204,187 +1548,86 @@
           const req = pageRegistry[i];
           if (req.isFailed) continue;
 
-          const rot   = req.rotation || 0;
-          const mH    = !!req.mirrorH;
-          const mV    = !!req.mirrorV;
+          const rot = req.rotation || 0;
           const swapDims = (rot === 90 || rot === 270);
 
           let newPage;
           let success = false;
 
-          if (req.isWord) {
-            if (!req.thumb || req.thumb.startsWith('data:image/svg')) {
-              newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
-              failedPageNumbers.push(finalPdf.getPageCount());
-            } else {
-              // Fix DEFINITIVO al reclamo recurrente de formato alterado:
-              // la hoja del PDF final ahora se dimensiona con el tamaño
-              // REAL de esa hoja de Word (req.nativeWidth/nativeHeight, leído
-              // de w:pgSz por docx-preview) — ya no se fuerza un A4 con
-              // márgenes inventados por esta app. Igual que ya hacían las
-              // imágenes sueltas (rama de abajo), la captura de la hoja YA
-              // incluye sus propios márgenes reales (padding calculado de
-              // w:pgMar), así que se incrusta tal cual, sin componer nada.
-              const pageW = swapDims ? req.nativeHeight : req.nativeWidth;
-              const pageH = swapDims ? req.nativeWidth : req.nativeHeight;
-              // La hoja se agrega UNA sola vez, antes de intentar dibujar
-              // nada — así, si algo falla más abajo, queda en blanco pero
-              // NUNCA se duplica agregando una segunda de rescate encima.
-              newPage = finalPdf.addPage([pageW, pageH]);
+          const srcDoc = loadedSrcDocs.get(req.fileId);
+          if (!srcDoc) {
+            newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
+            failedPageNumbers.push(finalPdf.getPageCount());
+          } else {
+            let srcPage = null, srcW = BASE_W, srcH = BASE_H, intrinsicRot = 0;
+            try {
+              const srcPages = srcPagesCache.get(req.fileId);
+              srcPage = srcPages[req.pageIndex];
+              const size = srcPage.getSize();
+              srcW = size.width;
+              srcH = size.height;
+            } catch (e) {
+              console.error('Error al leer dimensiones de la página original:', e);
+              // Aquí la hoja AÚN no se ha agregado (se agrega más abajo),
+              // por eso su número final es el conteo actual + 1.
+              failedPageNumbers.push(finalPdf.getPageCount() + 1);
+              srcPage = null; // se usará el respaldo A4 más abajo
+            }
 
+            // Fix (hoja perdida por un detalle menor): antes, si SOLO la
+            // lectura de /Rotate fallaba (con getSize() ya exitoso), se
+            // descartaba la hoja COMPLETA y salía en blanco. La rotación
+            // intrínseca es secundaria — si no se puede leer, se asume 0°
+            // y se sigue igual con el contenido real de la página.
+            if (srcPage) {
               try {
-                // Blindaje: hasta 2 intentos ante un fallo puntual de
-                // incrustación (ej. una condición transitoria al decodificar
-                // la imagen). Cada intento parte de cero, así que un intento
-                // fallido nunca deja contenido a medias.
-                //
-                // FIX (causa histórica de "hojas Word en blanco"): un
-                // enfoque anterior componía la imagen en una página de un
-                // PDFDocument TEMPORAL y luego la incrustaba en finalPdf con
-                // embedPage() — ese doble-incrustado no lanzaba ningún
-                // error, pero pdf-lib no resolvía el recurso de imagen al
-                // copiar la página entre documentos, dejando la hoja
-                // técnicamente válida pero completamente en blanco. Por eso
-                // aquí se incrusta directo con embedJpg + drawImage, el
-                // mismo camino simple que ya usan las imágenes sueltas
-                // (PNG/JPG) más abajo, confirmado sin ese problema.
-                await retryAsync(async () => {
-                  const imgBytes = await fetch(req.thumb).then(r => r.arrayBuffer());
-                  const embeddedImage = await finalPdf.embedJpg(imgBytes);
-                  drawTransformedContent(
-                    newPage,
-                    (opts) => newPage.drawImage(embeddedImage, opts),
-                    req.nativeWidth, req.nativeHeight, rot, mH, mV
-                  );
-                }, 2, 250);
-                success = true;
+                // CLAVE: pdf-lib IGNORA la marca interna /Rotate de la página
+                // (getSize devuelve siempre las dimensiones crudas del
+                // MediaBox), mientras que pdf.js —que genera las miniaturas
+                // que ve el usuario— SÍ la aplica. Ese desajuste hacía que
+                // las páginas escaneadas con /Rotate se vieran bien en
+                // pantalla pero salieran giradas en el PDF final. Aquí se
+                // lee esa marca para combinarla con la rotación del usuario.
+                const rawAngle = ((srcPage.getRotation().angle % 360) + 360) % 360;
+                // El estándar PDF exige múltiplos de 90, pero existen archivos
+                // mal formados. Un valor arbitrario (ej. 45) produciría
+                // geometría impredecible, así que se redondea al múltiplo de
+                // 90 más cercano en vez de propagar un valor inválido.
+                intrinsicRot = (Math.round(rawAngle / 90) * 90) % 360;
               } catch (e) {
-                console.error('Error al insertar imagen Word:', e);
-                failedPageNumbers.push(finalPdf.getPageCount());
-                // newPage ya existe (agregada arriba) — queda en blanco,
-                // sin agregar ninguna hoja adicional.
+                console.warn('No se pudo leer la rotación intrínseca de la página; se asume 0°.', e);
+                intrinsicRot = 0;
               }
             }
-          } else if (req.isImage) {
-            // La imagen conserva su propia proporción (a diferencia de
-            // Word, que siempre fuerza A4): la hoja del PDF final se
-            // dimensiona directamente a partir de nativeWidth/nativeHeight.
-            const entry = imageDocumentsData.get(req.fileId);
-            const pageW = swapDims ? req.nativeHeight : req.nativeWidth;
-            const pageH = swapDims ? req.nativeWidth : req.nativeHeight;
+
+            // Rotación total = la que ya traía la hoja + la que pidió el usuario.
+            const totalRot = (intrinsicRot + rot) % 360;
+            const totalSwap = (totalRot === 90 || totalRot === 270);
+            const pageW = totalSwap ? srcH : srcW;
+            const pageH = totalSwap ? srcW : srcH;
+
+            // Se agrega UNA sola vez antes del intento de dibujar, para
+            // que un fallo posterior nunca duplique la hoja.
             newPage = finalPdf.addPage([pageW, pageH]);
 
-            if (entry) {
+            if (srcPage) {
               try {
+                // Blindaje: reintento único ante un fallo puntual de
+                // incrustación (embedPage internamente hace trabajo async).
                 await retryAsync(async () => {
-                  const isJpeg = entry.mimeType === 'image/jpeg';
-                  // .slice(0) clona el buffer: nunca se le pasa a pdf-lib la
-                  // referencia directa guardada en imageDocumentsData, por si
-                  // se necesita para un segundo intento o una regeneración.
-                  const embeddedImage = isJpeg
-                    ? await finalPdf.embedJpg(entry.buffer.slice(0))
-                    : await finalPdf.embedPng(entry.buffer.slice(0));
+                  const embedded = await finalPdf.embedPage(srcPage);
+                  // embedPage entrega el contenido SIN aplicar /Rotate, así que
+                  // se le pasan las dimensiones crudas y la rotación total.
                   drawTransformedContent(
                     newPage,
-                    (opts) => newPage.drawImage(embeddedImage, opts),
-                    req.nativeWidth, req.nativeHeight, rot, mH, mV
+                    (opts) => newPage.drawPage(embedded, opts),
+                    srcW, srcH, totalRot
                   );
                 }, 2, 250);
                 success = true;
               } catch (e) {
-                console.error('Error al incrustar imagen:', e);
+                console.error('Error al incrustar página original:', e);
                 failedPageNumbers.push(finalPdf.getPageCount());
-              }
-            } else {
-              failedPageNumbers.push(finalPdf.getPageCount());
-            }
-          } else {
-            const srcDoc = loadedSrcDocs.get(req.fileId);
-            if (!srcDoc) {
-              newPage = finalPdf.addPage(swapDims ? [BASE_H, BASE_W] : [BASE_W, BASE_H]);
-              failedPageNumbers.push(finalPdf.getPageCount());
-            } else {
-              let srcPage = null, srcW = BASE_W, srcH = BASE_H, intrinsicRot = 0;
-              try {
-                const srcPages = srcPagesCache.get(req.fileId);
-                srcPage = srcPages[req.pageIndex];
-                const size = srcPage.getSize();
-                srcW = size.width;
-                srcH = size.height;
-              } catch (e) {
-                console.error('Error al leer dimensiones de la página original:', e);
-                // Aquí la hoja AÚN no se ha agregado (se agrega más abajo),
-                // por eso su número final es el conteo actual + 1.
-                failedPageNumbers.push(finalPdf.getPageCount() + 1);
-                srcPage = null; // se usará el respaldo A4 más abajo
-              }
-
-              // Fix (hoja perdida por un detalle menor): antes, si SOLO la
-              // lectura de /Rotate fallaba (con getSize() ya exitoso), se
-              // descartaba la hoja COMPLETA y salía en blanco. La rotación
-              // intrínseca es secundaria — si no se puede leer, se asume 0°
-              // y se sigue igual con el contenido real de la página.
-              if (srcPage) {
-                try {
-                  // CLAVE: pdf-lib IGNORA la marca interna /Rotate de la página
-                  // (getSize devuelve siempre las dimensiones crudas del
-                  // MediaBox), mientras que pdf.js —que genera las miniaturas
-                  // que ve el usuario— SÍ la aplica. Ese desajuste hacía que
-                  // las páginas escaneadas con /Rotate se vieran bien en
-                  // pantalla pero salieran giradas en el PDF final. Aquí se
-                  // lee esa marca para combinarla con la rotación del usuario.
-                  const rawAngle = ((srcPage.getRotation().angle % 360) + 360) % 360;
-                  // El estándar PDF exige múltiplos de 90, pero existen archivos
-                  // mal formados. Un valor arbitrario (ej. 45) produciría
-                  // geometría impredecible, así que se redondea al múltiplo de
-                  // 90 más cercano en vez de propagar un valor inválido.
-                  intrinsicRot = (Math.round(rawAngle / 90) * 90) % 360;
-                } catch (e) {
-                  console.warn('No se pudo leer la rotación intrínseca de la página; se asume 0°.', e);
-                  intrinsicRot = 0;
-                }
-              }
-
-              // Rotación total = la que ya traía la hoja + la que pidió el usuario.
-              const totalRot = (intrinsicRot + rot) % 360;
-              const totalSwap = (totalRot === 90 || totalRot === 270);
-              const pageW = totalSwap ? srcH : srcW;
-              const pageH = totalSwap ? srcW : srcH;
-
-              // Fix adicional (confirmado por álgebra y prueba con marcador
-              // asimétrico): cuando la rotación intrínseca de la hoja es de
-              // 90°/270°, los ejes de espejo H/V que el usuario eligió —
-              // mirando la vista YA orientada en pantalla— quedan CRUZADOS
-              // si se aplican tal cual en el marco crudo de pdf-lib. Se
-              // intercambian aquí antes de dibujar. (Con 0°/180° no hace
-              // falta: esas rotaciones no cruzan los ejes de espejo.)
-              const axesSwap = (intrinsicRot === 90 || intrinsicRot === 270);
-              const finalMH = axesSwap ? mV : mH;
-              const finalMV = axesSwap ? mH : mV;
-
-              // Se agrega UNA sola vez antes del intento de dibujar, para
-              // que un fallo posterior nunca duplique la hoja.
-              newPage = finalPdf.addPage([pageW, pageH]);
-
-              if (srcPage) {
-                try {
-                  // Blindaje: reintento único ante un fallo puntual de
-                  // incrustación (embedPage internamente hace trabajo async).
-                  await retryAsync(async () => {
-                    const embedded = await finalPdf.embedPage(srcPage);
-                    // embedPage entrega el contenido SIN aplicar /Rotate, así que
-                    // se le pasan las dimensiones crudas y la rotación total.
-                    drawTransformedContent(
-                      newPage,
-                      (opts) => newPage.drawPage(embedded, opts),
-                      srcW, srcH, totalRot, finalMH, finalMV
-                    );
-                  }, 2, 250);
-                  success = true;
-                } catch (e) {
-                  console.error('Error al incrustar página original:', e);
-                  failedPageNumbers.push(finalPdf.getPageCount());
-                }
               }
             }
           }
@@ -2425,7 +1668,13 @@
 
           for (const result of stampablePages) {
             const { width, height } = result.newPage.getSize();
-            const fStr = String(folioNum).padStart(3, '0');
+            // 4 cifras (antes 3): con hasta ~2000 páginas por lote, un foleo
+            // de 3 dígitos se quedaba corto (tope 999) antes de llegar al
+            // final de un lote grande. El ancho del sello ya se mide contra
+            // el texto real (ver abajo), así que el cambio no requiere tocar
+            // nada más — un folio de 5+ cifras (inicio alto + lote grande)
+            // tampoco se corta, solo deja de verse con ceros a la izquierda.
+            const fStr = String(folioNum).padStart(4, '0');
 
             // Fix: el sello del foleo se escala en proporción al tamaño real
             // de la hoja (referencia: A4). Antes usaba medidas fijas, lo que
@@ -2464,8 +1713,7 @@
         }
 
         // La compresión estructural (useObjectStreams) siempre queda activa:
-        // no hay ningún caso real en que convenga desactivarla, así que ya
-        // no se le pregunta al usuario (Fix: checkbox "Optimizar Peso" eliminado).
+        // no hay ningún caso real en que convenga desactivarla.
         const finalBytes = await finalPdf.save({ useObjectStreams: true });
 
         const blob = new Blob([finalBytes], { type: 'application/pdf' });
@@ -2503,6 +1751,59 @@
     });
 
     /* ═══════════════════════════════════════════════
+       PROCESAR ARCHIVOS (exclusivo PDF)
+       ═══════════════════════════════════════════════ */
+    async function processFiles(files) {
+      const allFiles = Array.from(files);
+      const pdfs = allFiles.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+      const rejected = allFiles.filter(f => pdfs.indexOf(f) === -1);
+
+      if (rejected.length > 0) {
+        const nombres = rejected.map(f => '"' + f.name + '"').join(', ');
+        showToast('Esta app trabaja exclusivamente con PDF: ' + nombres + ' no se cargó.', 'warning');
+      }
+
+      if (pdfs.length === 0) return;
+
+      // Aviso (no bloqueante) si el lote es muy pesado en bytes
+      const totalBytes = pdfs.reduce((acc, f) => acc + f.size, 0);
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        showToast('El lote pesa más de ' + Math.round(MAX_TOTAL_BYTES / (1024 * 1024)) + 'MB. El navegador podría ir lento.', 'warning');
+      }
+
+      if (pageRegistry.length >= MAX_TOTAL_PAGES) {
+        showToast('Ya alcanzaste el límite de ' + MAX_TOTAL_PAGES + ' páginas en el workspace.', 'error');
+        return;
+      }
+
+      showLoader('Procesando archivos...', true);
+      btnGenerate.disabled = true;
+      let processed = 0;
+
+      for (const file of pdfs) {
+        const fileId = generateId();
+        const buffer = await file.arrayBuffer();
+        pdfDocumentsData.set(fileId, { buffer, name: file.name });
+        await processPDF(file, fileId, buffer);
+        const newIds = pageRegistry.filter(r => r.fileId === fileId && !r.isFailed).map(r => r.id);
+        if (newIds.length > 1 && askKeepAsBlock(file.name, newIds.length)) {
+          wrapCardsIntoGroup(newIds, file.name);
+        }
+        processed++;
+        updateProgress(processed, pdfs.length);
+      }
+
+      btnGenerate.disabled = (pageRegistry.length === 0);
+      hideLoader();
+      fileInput.value = '';
+
+      if (pageRegistry.length > 0) {
+        showToast('Cargadas ' + pageRegistry.length + ' páginas. Organízalas y genera el PDF.', 'success');
+        flashPageCountBadge();
+      }
+    }
+
+    /* ═══════════════════════════════════════════════
        EVENTOS DROP ZONE / FILE INPUT
        ═══════════════════════════════════════════════ */
     dropZone.addEventListener('click', () => fileInput.click());
@@ -2527,7 +1828,7 @@
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
 
       // Ctrl+Z deshace; Ctrl+Y o Ctrl+Shift+Z rehace — cubre reordenar,
-      // eliminar, rotar y espejar.
+      // eliminar y rotar.
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
@@ -2601,6 +1902,6 @@
       }
     });
 
-    console.log('✅ UNIFICADOR SEDAPAL — inicializado. PDF + DOCX + Imágenes + Multi-Drag + Rotación/Espejo/Zoom.');
+    console.log('✅ UNIFICADOR SEDAPAL — inicializado. Exclusivo PDF · Rotación · Foleo · Bloques (hasta ' + MAX_TOTAL_PAGES + ' páginas).');
   }
 })();
