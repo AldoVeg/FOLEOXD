@@ -138,9 +138,9 @@ Se analizó el proyecto completo (`index.html`, `index.css`, `index.js`): una ap
 
 ## Resumen de archivos modificados
 
-- `index.html` — estructura, controles de foleo, (Ronda 13) botones Deshacer/Rehacer y modal de rango de páginas, (Ronda 14) CDN de docx-preview/jszip/html2canvas retirados por completo, input restringido a `.pdf`.
+- `index.html` — estructura, controles de foleo, (Ronda 13) botones Deshacer/Rehacer y modal de rango de páginas, (Ronda 14) CDN de docx-preview/jszip/html2canvas retirados por completo, input restringido a `.pdf`, (Ronda 17) pdf.js pasa a cargarse como módulo ES (versión 6.3.289).
 - `index.css` — rediseño visual completo, cuadro flotante, estilos de zoom, (Ronda 10) selectores `header`/`footer` escapados a `.portal-container`, (Ronda 13) estilos del modal de rango y del bloque de archivo (`.page-group`), (Ronda 14) badges de formato y estilos de espejo retirados.
-- `index.js` — toda la lógica: generación de PDF en dos pasadas, corrección del bug de compresión por flexbox, zoom con movilidad, contador flotante, mensajes de error específicos, (Ronda 13) deshacer/rehacer, selección de rango de páginas y agrupamiento de archivo completo como bloque, (Ronda 14) motor reducido a exclusivo PDF (fuera Word/imágenes y todo su procesamiento — `processWord`, `processImage`, `docx-preview`, etc., de las Rondas 3-12), espejo horizontal/vertical retirado en toda la app, límite de páginas subido de 400 a 2000.
+- `index.js` — toda la lógica: generación de PDF en dos pasadas, corrección del bug de compresión por flexbox, zoom con movilidad, contador flotante, mensajes de error específicos, (Ronda 13) deshacer/rehacer, selección de rango de páginas y agrupamiento de archivo completo como bloque, (Ronda 14) motor reducido a exclusivo PDF (fuera Word/imágenes y todo su procesamiento — `processWord`, `processImage`, `docx-preview`, etc., de las Rondas 3-12), espejo horizontal/vertical retirado en toda la app, límite de páginas subido de 400 a 2000, (Ronda 17) pdf.js actualizado a v6.3.289 con sus 2 roturas de API correspondientes corregidas, progreso real por página durante la carga, aviso temprano por archivo pesado.
 
 ---
 
@@ -285,3 +285,31 @@ Al adjuntar un PDF o Word de más de una página, se pregunta si se quiere desgl
 - `index.css`: `.control-item input[type="number"]` — ancho `56px` → `64px`.
 
 **Testeo (medición real, no visual):** se generó un PDF de 3 páginas con la app real y foleo activado, y se extrajo el texto del PDF **descargado** con `pdfjs-dist` (no una inspección del navegador) — confirmado que el sello ahora imprime "0001", "0002", "0003" en vez de "001", "002", "003".
+
+---
+
+## Ronda 17 — "Solo carga y carga, nunca lee": diagnóstico con archivo real y 4 mejoras
+
+**Pedido:** el usuario adjuntó un archivo real de trabajo ("SUSTENTO ENTREGABLE 4.pdf", **275 MB, 479 páginas**) reportando que la app "solo carga y carga, pero nunca lee" al adjuntarlo — pidió leer sus características y evaluarlo al 100% para generar mejoras. Aclaración explícita del usuario: ese archivo es **intocable**, solo se usa como caso de prueba real.
+
+**Diagnóstico (con el archivo real, en Chrome real vía Puppeteer, contra la app real corriendo en un servidor local — no una suposición):**
+- El archivo SÍ terminaba de cargar sus 479 miniaturas (~65 segundos en una máquina con 4GB de heap dedicados), pero cada vez más lento a medida que se agregaban tarjetas al DOM — sin ningún texto que indicara avance real, solo una barra `<progress>` silenciosa con el rótulo fijo "Procesando archivos...". Con más de un minuto de espera sin ninguna confirmación textual de que algo seguía sucediendo, es indistinguible de un cuelgue para quien lo usa.
+- Se identificaron 4 causas concretas, en orden de peso: (1) sin progreso legible por página, (2) miniaturas decodificando la imagen del escaneo a resolución completa aunque el resultado final sea diminuto, (3) `pdf.js` fijado en la versión 2.16.105 (de ~2022, sin las mejoras de decodificación de imágenes de versiones más recientes), (4) sin aviso temprano específico para un archivo individual ya pesado (el aviso existente era solo por lote).
+- Una primera prueba automatizada pareció mostrar que la pestaña se congelaba cerca de completar el lote — investigado a fondo, resultó ser un **falso positivo del propio arnés de prueba** (un `window.confirm()` de la app, sin manejar en el script de Puppeteer, bloqueaba el hilo principal) y no un bug real de la app; se corrigió el test y se confirmó el comportamiento real antes de sacar conclusiones.
+
+**Cambios aplicados:**
+1. **Progreso real, página por página:** `updateProgress()` ahora acepta y muestra un texto ("Cargando página 234 de 479 — \"archivo.pdf\"") en vez de dejar la barra silenciosa — así se ve que sí avanza, sin importar cuánto tarde.
+2. **Aviso temprano por archivo pesado:** antes de empezar a cargar, cualquier PDF individual de más de 80MB dispara un aviso propio explicando que puede tardar varios minutos — ya no solo existe el aviso genérico por lote completo (500MB).
+3. **`pdf.js` actualizado de 2.16.105 a 6.3.289** (la última estable): esto de paso resuelve la causa (2) — las versiones recientes de pdf.js decodifican imágenes grandes de forma más eficiente al generar miniaturas pequeñas, sin necesidad de tocar el código de la app para lograrlo.
+4. Se descartó tocar el escalado manual de las miniaturas por separado: la mejora de pdf.js ya cubre esa causa de raíz.
+
+**Complicación técnica encontrada al actualizar pdf.js:** desde la versión 4, pdf.js dejó de publicar un build clásico `pdf.min.js` para `<script defer>` — solo distribuye módulos ES (`.mjs`). Se resolvió cargándolo con un `<script type="module">` que hace `import * as pdfjsLib` y lo expone como `window.pdfjsLib`, manteniendo `index.js` sin cambios estructurales (sigue siendo un script clásico). Esto además expuso **dos roturas reales de API** entre pdf.js 2.x y 6.x, encontradas y corregidas con pruebas reales en navegador:
+- `PDFDocumentProxy.destroy()` ya no existe en v6 (solo `loadingTask.destroy()`) — se quitó la llamada obsoleta en `processPDF` y se adaptó la caché de documentos del modal de zoom (`modalPdfDocCache`) para guardar también su `loadingTask` y poder liberarlo correctamente.
+- pdf.js v6 puede dejar **"detached"** (inutilizable) el `ArrayBuffer` original que se le pasa al cargarlo, algo que la versión 2.x no hacía — y ese mismo buffer se reutilizaba después, intacto, para la generación final con `pdf-lib`. Sin la corrección, la generación fallaba en el 100% de los casos con "Cannot perform Construct on a detached ArrayBuffer". Se corrigió pasándole a pdf.js una copia (`buffer.slice(0)`) en vez del buffer original, el mismo patrón defensivo que el modal de alta resolución ya usaba por una razón parecida.
+
+**Incidente durante la sesión (documentado por transparencia):** a mitad del trabajo, una fusión de git ejecutada en paralelo (visible por `.git/COMMIT_EDITMSG` abierto en el editor del usuario) dejó `index.js` en un estado mixto: revirtió el límite de páginas a 400, el límite de lote a 200MB, resucitó código muerto de la era Word/imágenes (previa a la Ronda 14) y **eliminó por completo la función `processFiles()`**, dejando la app incapaz de procesar cualquier archivo adjuntado. Se detectó de inmediato por un error de consola (`processFiles is not defined`) durante el testeo posterior a los cambios, se auditó el archivo completo línea por línea contra el diff real de la fusión (`git diff`), y se restauró todo lo perdido junto con las 4 mejoras de esta ronda, sin tocar nada más.
+
+**Testeo final (Puppeteer + Chromium real, con diálogos nativos correctamente atendidos):**
+- Con un PDF de 120 páginas: el texto de progreso capturado en vivo mostró la secuencia completa "Cargando página 1 de 120" → ... → "Cargando página 120 de 120", confirmando que el aviso de progreso es real y no cosmético.
+- Con el archivo real de 275MB/479 páginas: carga completa + generación exitosa del PDF final de principio a fin, sin quedarse pegado y sin el error de buffer "detached".
+- Con un PDF de 3 páginas: ciclo completo de carga + foleo + generación confirmado sin regresiones.

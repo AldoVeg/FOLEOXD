@@ -1,0 +1,4 @@
+# Archivos de referencia/prueba del usuario — nunca deben versionarse
+# (pueden ser confidenciales y/o superar el límite de tamaño de GitHub)
+SUSTENTO*.pdf
+*.local.pdf

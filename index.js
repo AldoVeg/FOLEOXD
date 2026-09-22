@@ -42,12 +42,12 @@
     if (typeof Sortable === 'undefined') {
       console.warn('⚠️ SortableJS no disponible. Solo drag nativo.');
     }
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.worker.min.mjs';
 
     /* ── Límites de memoria / seguridad de ejecución ── */
     const MAX_TOTAL_PAGES  = 2000;                // páginas totales permitidas en el workspace
     const MAX_TOTAL_BYTES  = 500 * 1024 * 1024;   // 500MB de archivos cargados por lote
+    const HEAVY_FILE_BYTES = 80 * 1024 * 1024;    // a partir de aquí, un solo archivo ya amerita aviso propio
 
     /* ── Referencias DOM ── */
     const workspace       = document.getElementById('workspace');
@@ -114,9 +114,14 @@
       if (withProgress) progressBar.value = 0;
     }
 
-    function updateProgress(cur, total) {
+    function updateProgress(cur, total, label) {
       if (!progressBar || progressBar.classList.contains('hidden')) return;
       progressBar.value = Math.round((cur / total) * 100);
+      // Texto real de avance (no solo la barra): en un archivo de cientos de
+      // páginas, una barra silenciosa que tarda más de un minuto es
+      // indistinguible de un cuelgue. Con la cuenta exacta, el usuario ve
+      // que SÍ avanza aunque tome tiempo.
+      if (label && textStatus) textStatus.textContent = label;
     }
 
     function hideLoader() {
@@ -694,8 +699,11 @@
       // para esta sesión del modal — no deben quedar viviendo en memoria
       // indefinidamente después de cerrar.
       modalHighResCache.clear();
-      for (const doc of modalPdfDocCache.values()) {
-        try { await doc.destroy(); } catch (e) { /* silencioso */ }
+      for (const entry of modalPdfDocCache.values()) {
+        // Desde pdf.js v6, PDFDocumentProxy ya no tiene `.destroy()` propio
+        // (ver nota igual en processPDF) — solo el loadingTask que lo creó
+        // puede liberarlo.
+        try { await entry.loadingTask.destroy(); } catch (e) { /* silencioso */ }
       }
       modalPdfDocCache.clear();
     }
@@ -721,16 +729,19 @@
     async function getHighResImage(record) {
       if (modalHighResCache.has(record.id)) return modalHighResCache.get(record.id);
 
-      let pdfDoc = modalPdfDocCache.get(record.fileId);
-      if (!pdfDoc) {
+      let cached = modalPdfDocCache.get(record.fileId);
+      if (!cached) {
         const entry = pdfDocumentsData.get(record.fileId);
         if (!entry) return record.thumb; // no debería pasar, pero no se rompe la vista
         // .slice(0) clona el buffer: pdf.js puede "consumir" el ArrayBuffer
         // original, y ese mismo buffer podría necesitarse después para
         // generar el PDF final — nunca se le pasa la referencia directa.
-        pdfDoc = await pdfjsLib.getDocument({ data: entry.buffer.slice(0) }).promise;
-        modalPdfDocCache.set(record.fileId, pdfDoc);
+        const loadingTask = pdfjsLib.getDocument({ data: entry.buffer.slice(0) });
+        const loadedDoc = await loadingTask.promise;
+        cached = { pdfDoc: loadedDoc, loadingTask };
+        modalPdfDocCache.set(record.fileId, cached);
       }
+      const pdfDoc = cached.pdfDoc;
 
       const page = await pdfDoc.getPage(record.pageIndex + 1);
       const viewport = page.getViewport({ scale: HIGH_RES_SCALE });
@@ -1353,7 +1364,13 @@
 
       let loadingTask;
       try {
-        loadingTask = pdfjsLib.getDocument({ data: buffer });
+        // .slice(0) clona el buffer: desde pdf.js v6, la librería puede
+        // transferir (dejar "detached") el ArrayBuffer que se le pasa al
+        // entregárselo a su Worker — y este mismo `buffer` es el que queda
+        // guardado en pdfDocumentsData para la generación final con
+        // pdf-lib. Sin la copia, esa segunda lectura fallaba con
+        // "Cannot perform Construct on a detached ArrayBuffer".
+        loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0) });
         const pdf = await loadingTask.promise;
         const totalPages = pdf.numPages;
 
@@ -1377,7 +1394,8 @@
             break;
           }
 
-          updateProgress(i - fromPage + 1, rangeCount);
+          const doneCount = i - fromPage + 1;
+          updateProgress(doneCount, rangeCount, 'Cargando página ' + doneCount + ' de ' + rangeCount + ' — "' + file.name + '"');
           if ((i - fromPage) % 5 === 0) await new Promise(r => setTimeout(r, 1));
 
           const pageId = fileId + '_' + i;
@@ -1410,7 +1428,10 @@
             createFailedCard(fileId, i - 1, 'Pág ' + i);
           }
         }
-        await pdf.destroy();
+        // Nota de compatibilidad: desde pdf.js v6, PDFDocumentProxy ya no
+        // expone `.destroy()` propio — la liberación del documento se hace
+        // únicamente a través de `loadingTask.destroy()`, ya cubierto abajo
+        // en el `finally` (que corre siempre, con éxito o con error).
       } catch (err) {
         console.error('Error PDF:', err);
         showToast('Error al leer: ' + file.name, 'error');
@@ -1770,6 +1791,17 @@
       if (totalBytes > MAX_TOTAL_BYTES) {
         showToast('El lote pesa más de ' + Math.round(MAX_TOTAL_BYTES / (1024 * 1024)) + 'MB. El navegador podría ir lento.', 'warning');
       }
+
+      // Aviso temprano y específico POR ARCHIVO (no solo por lote): un solo
+      // PDF ya pesado (típico de un escaneo a color de cientos de páginas)
+      // puede tardar bastante en generar sus miniaturas aunque el lote total
+      // no supere el límite de arriba. Se avisa ANTES de empezar a cargar,
+      // para que el usuario sepa que la barra de progreso seguirá viva un
+      // buen rato y no lo confunda con un cuelgue.
+      const heavyFiles = pdfs.filter(f => f.size > HEAVY_FILE_BYTES);
+      heavyFiles.forEach(f => {
+        showToast('"' + f.name + '" pesa ' + (f.size / (1024 * 1024)).toFixed(0) + 'MB — puede tardar varios minutos en cargar sus miniaturas. La barra de progreso mostrará el avance real, página por página.', 'warning');
+      });
 
       if (pageRegistry.length >= MAX_TOTAL_PAGES) {
         showToast('Ya alcanzaste el límite de ' + MAX_TOTAL_PAGES + ' páginas en el workspace.', 'error');

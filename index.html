@@ -21,9 +21,17 @@
     <script defer src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"
             onerror="document.getElementById('cdn-error').classList.remove('hidden');document.getElementById('cdn-error').textContent='⚠️ pdf-lib no disponible. Revisa tu conexión.'"></script>
 
-    <!-- CDN: pdf.js (visualizador de miniaturas) -->
-    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"
-            onerror="document.getElementById('cdn-error').classList.remove('hidden');document.getElementById('cdn-error').textContent='⚠️ pdf.js no disponible. Revisa tu conexión.'"></script>
+    <!-- CDN: pdf.js (visualizador de miniaturas). Desde la versión 4, pdf.js
+         solo se distribuye como módulo ES (ya no existe un build clásico
+         "pdf.min.js" con <script defer>) — este módulo inline importa la
+         librería y la expone como `window.pdfjsLib`, tal cual la espera
+         index.js. Si la importación falla (sin red, CDN caído), pdfjsLib
+         queda undefined y el chequeo ya existente en index.js muestra el
+         mismo aviso de "Motor PDF no disponible". -->
+    <script type="module">
+      import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.min.mjs";
+      window.pdfjsLib = pdfjsLib;
+    </script>
 
     <!-- CDN: SortableJS (versión fijada, ya no "@latest") -->
     <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
